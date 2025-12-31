@@ -322,6 +322,9 @@ class IRGenerator {
     private componentSizes: Map<string, { width: number; height: number }> = new Map();
     private symbols: Map<string, { kind: string; type: string }> = new Map();
     
+    // Hole occupancy tracking: key = "col,row" (e.g., "5,D"), value = componentId or wire index
+    private occupiedHoles: Map<string, string> = new Map();
+    
     // Breadboard geometry constants
     private readonly HOLE_SPACING = 2.54;
     private readonly NUM_COLS = 63;
@@ -339,6 +342,12 @@ class IRGenerator {
             wires: []
         };
 
+        // Clear state
+        this.occupiedHoles.clear();
+        this.componentPositions.clear();
+        this.componentSizes.clear();
+        this.symbols.clear();
+
         for (const comp of program.components) {
             this.symbols.set(comp.id, { kind: 'component', type: comp.type });
         }
@@ -355,6 +364,9 @@ class IRGenerator {
         }
 
         this.layoutComponents(ir);
+        
+        // Mark IC pin holes as occupied
+        this.markICPinHoles(ir);
 
         ir.wires = this.generateWires(program.connections);
 
@@ -372,6 +384,34 @@ class IRGenerator {
         ir.height = maxY + 20;
 
         return ir;
+    }
+
+    private markICPinHoles(ir: CircuitIR): void {
+        // For each IC, mark the holes where its pins are inserted
+        for (const comp of ir.components) {
+            const pinCount = comp.pinCount;
+            const pinsPerSide = pinCount / 2;
+            
+            // Get the column where this IC starts
+            const pos = this.componentPositions.get(comp.id);
+            if (!pos) continue;
+            
+            // Calculate starting column from position
+            const holeMargin = 18 / 4;
+            const startCol = Math.round((pos.x + 1 - holeMargin) / this.HOLE_SPACING) + 1;
+            
+            // Top pins (1 to pinsPerSide) go into row E
+            for (let i = 0; i < pinsPerSide; i++) {
+                const col = startCol + i;
+                this.occupiedHoles.set(`${col},E`, comp.id);
+            }
+            
+            // Bottom pins go into row F
+            for (let i = 0; i < pinsPerSide; i++) {
+                const col = startCol + i;
+                this.occupiedHoles.set(`${col},F`, comp.id);
+            }
+        }
     }
 
     private generateBoard(board: BoardDecl): BoardIR {
@@ -495,8 +535,28 @@ class IRGenerator {
         };
     }
 
+    // Find the next free hole in the same column (shorted together on breadboard)
+    private findFreeHoleInColumn(col: number, preferredRow: string, wireId: string): string {
+        // Rows in order of preference for top half (A-E) and bottom half (F-J)
+        const topRows = ['D', 'C', 'B', 'A']; // E is occupied by IC pin
+        const bottomRows = ['G', 'H', 'I', 'J']; // F is occupied by IC pin
+        
+        const rows = preferredRow <= 'E' ? topRows : bottomRows;
+        
+        for (const row of rows) {
+            const key = `${col},${row}`;
+            if (!this.occupiedHoles.has(key)) {
+                this.occupiedHoles.set(key, wireId);
+                return row;
+            }
+        }
+        
+        // Fallback to preferred row if all are occupied
+        return preferredRow;
+    }
+
     // Get wire terminal position - connects to a free hole in the same column
-    private getWireTerminalPosition(componentId: string, pinNumber: number): Position {
+    private getWireTerminalPosition(componentId: string, pinNumber: number, wireId: string): Position {
         const pos = this.componentPositions.get(componentId);
         if (!pos) return { x: 0, y: 0 };
 
@@ -505,33 +565,31 @@ class IRGenerator {
 
         if (symbol.kind === 'board') {
             const col = ((pinNumber - 1) % this.NUM_COLS) + 1;
-            const row = pinNumber <= this.NUM_COLS ? 'D' : 'G';
+            const preferredRow = pinNumber <= this.NUM_COLS ? 'D' : 'G';
+            const row = this.findFreeHoleInColumn(col, preferredRow, wireId);
             return this.getBoardHolePosition(componentId, col, row);
         }
 
-        // For IC pins, wire connects to adjacent row (not on the IC leg)
+        // For IC pins, find a free hole in the same column
         const pinCount = BUILTIN_ICS[symbol.type] || 14;
         const pinsPerSide = pinCount / 2;
         
-        // IC body position is stored in pos
-        // Pin x = pos.x + 1 + pinIndex * HOLE_SPACING (same as renderer)
-        const pinLength = 1.5; // base units
-        const icHeight = 7; // base units
+        // Calculate column for this pin
+        const holeMargin = 18 / 4;
+        const startCol = Math.round((pos.x + 1 - holeMargin) / this.HOLE_SPACING) + 1;
         
         if (pinNumber <= pinsPerSide) {
-            // Top pin - connects to row D (one row above row E)
+            // Top pin
             const pinIndex = pinNumber - 1;
-            const pinX = pos.x + 1 + pinIndex * this.HOLE_SPACING;
-            // Row E is at pos.y - pinLength, Row D is one HOLE_SPACING above
-            const rowDY = pos.y - pinLength - this.HOLE_SPACING;
-            return { x: pinX, y: rowDY };
+            const col = startCol + pinIndex;
+            const row = this.findFreeHoleInColumn(col, 'D', wireId);
+            return this.getBoardHolePosition('B1', col, row); // Assuming B1 is the board
         } else {
-            // Bottom pin - connects to row G (one row below row F)
+            // Bottom pin
             const pinIndex = pinCount - pinNumber;
-            const pinX = pos.x + 1 + pinIndex * this.HOLE_SPACING;
-            // Row F is at pos.y + icHeight + pinLength, Row G is one HOLE_SPACING below
-            const rowGY = pos.y + icHeight + pinLength + this.HOLE_SPACING;
-            return { x: pinX, y: rowGY };
+            const col = startCol + pinIndex;
+            const row = this.findFreeHoleInColumn(col, 'G', wireId);
+            return this.getBoardHolePosition('B1', col, row);
         }
     }
 
@@ -546,12 +604,14 @@ class IRGenerator {
 
         for (let i = 0; i < connections.length; i++) {
             const conn = connections[i];
+            const wireId = `wire_${i}`;
             // Use wire terminal positions (adjacent free holes) instead of pin positions
-            const fromPos = this.getWireTerminalPosition(conn.source.componentId, conn.source.pinNumber);
+            const fromPos = this.getWireTerminalPosition(conn.source.componentId, conn.source.pinNumber, wireId + '_from');
             const color = colors[i % colors.length];
 
-            for (const dest of conn.destinations) {
-                const toPos = this.getWireTerminalPosition(dest.componentId, dest.pinNumber);
+            for (let j = 0; j < conn.destinations.length; j++) {
+                const dest = conn.destinations[j];
+                const toPos = this.getWireTerminalPosition(dest.componentId, dest.pinNumber, wireId + '_to_' + j);
                 const waypoints = this.routeWire(fromPos, toPos, usedYChannels, usedXChannels, CHANNEL_SPACING);
                 
                 wires.push({
