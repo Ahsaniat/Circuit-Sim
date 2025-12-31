@@ -1,6 +1,7 @@
 import { CircuitIR, ComponentIR, BoardIR, Wire, Position } from '../types';
-import { BreadboardGeometry } from '../geometry/BreadboardGeometry';
+import { BreadboardGeometry, HolePosition } from '../geometry/BreadboardGeometry';
 import { getComponentFootprint } from '../geometry/ComponentFootprints';
+import { SnapManager } from '../geometry/SnapManager';
 
 const BASE_SCALE = 4;  // Pixels per base unit
 const PADDING = 20;
@@ -41,11 +42,18 @@ export class CircuitRenderer {
     // Geometry instances for each board
     private boardGeometries: Map<string, BreadboardGeometry> = new Map();
     
+    // Snap managers for each board
+    private snapManagers: Map<string, SnapManager> = new Map();
+    
     // Interaction state
     private draggables: DraggableElement[] = [];
     private selectedId: string | null = null;
     private isDragging = false;
     private dragOffset = { x: 0, y: 0 };
+    
+    // Snap preview state
+    private snapPreviewHoles: HolePosition[] = [];
+    private isSnapped = false;
     
     // Zoom and pan state
     private zoom = 1;
@@ -284,22 +292,37 @@ export class CircuitRenderer {
             const newBaseX = pos.x - this.dragOffset.x;
             const newBaseY = pos.y - this.dragOffset.y;
             
+            // Get the primary snap manager (first board)
+            const snapMgr = this.snapManagers.values().next().value as SnapManager | undefined;
+            
             // Check if dragging a wire terminal
             if (this.selectedId.includes('_from') || this.selectedId.includes('_to')) {
-                // Wire terminal dragging - move only that terminal
+                // Wire terminal dragging - move only that terminal with SNAP
                 const wireIndexMatch = this.selectedId.match(/wire_(\d+)_(from|to)/);
                 if (wireIndexMatch) {
                     const wireIndex = parseInt(wireIndexMatch[1]);
                     const terminal = wireIndexMatch[2] as 'from' | 'to';
                     const wire = this.circuitIR.wires[wireIndex];
                     
-                    if (wire) {
+                    if (wire && snapMgr) {
+                        // Snap the terminal position to nearest hole
+                        const snapResult = snapMgr.snapPosition(pos);
+                        this.isSnapped = snapResult.snapped;
+                        
                         if (terminal === 'from') {
-                            wire.from.x = pos.x;
-                            wire.from.y = pos.y;
+                            wire.from.x = snapResult.x;
+                            wire.from.y = snapResult.y;
                         } else {
-                            wire.to.x = pos.x;
-                            wire.to.y = pos.y;
+                            wire.to.x = snapResult.x;
+                            wire.to.y = snapResult.y;
+                        }
+                        
+                        // Update snap preview
+                        if (snapResult.snapped && snapResult.col && snapResult.row) {
+                            const geo = this.boardGeometries.values().next().value as BreadboardGeometry;
+                            this.snapPreviewHoles = [geo.getHolePosition(snapResult.col, snapResult.row)];
+                        } else {
+                            this.snapPreviewHoles = [];
                         }
                     }
                 }
@@ -337,21 +360,44 @@ export class CircuitRenderer {
                             }
                         }
                         
-                        // Update geometry
+                        // Update geometry and snap manager
                         const geo = this.boardGeometries.get(board.id);
-                        if (geo) geo.setPosition(newBaseX, newBaseY);
+                        if (geo) {
+                            geo.setPosition(newBaseX, newBaseY);
+                            const snap = this.snapManagers.get(board.id);
+                            if (snap) snap.setGeometry(geo);
+                        }
                     }
+                    this.snapPreviewHoles = [];
+                    this.isSnapped = false;
                 } else if (dragged.type === 'wire' && dragged.wireIndex !== undefined) {
-                    // Move entire wire independently (when dragging by body, not terminal)
+                    // Move entire wire independently with SNAP on both terminals
                     const wire = this.circuitIR.wires[dragged.wireIndex];
-                    if (wire) {
+                    if (wire && snapMgr) {
+                        // Calculate new positions for both terminals
                         const dx = newBaseX - wire.from.x;
                         const dy = newBaseY - wire.from.y;
                         
-                        wire.from.x += dx;
-                        wire.from.y += dy;
-                        wire.to.x += dx;
-                        wire.to.y += dy;
+                        const newFromPos = { x: wire.from.x + dx, y: wire.from.y + dy };
+                        const newToPos = { x: wire.to.x + dx, y: wire.to.y + dy };
+                        
+                        // Try to snap from terminal
+                        const fromSnap = snapMgr.snapPosition(newFromPos);
+                        if (fromSnap.snapped) {
+                            const snapDx = fromSnap.x - newFromPos.x;
+                            const snapDy = fromSnap.y - newFromPos.y;
+                            wire.from.x = fromSnap.x;
+                            wire.from.y = fromSnap.y;
+                            wire.to.x = newToPos.x + snapDx;
+                            wire.to.y = newToPos.y + snapDy;
+                            this.isSnapped = true;
+                        } else {
+                            wire.from.x = newFromPos.x;
+                            wire.from.y = newFromPos.y;
+                            wire.to.x = newToPos.x;
+                            wire.to.y = newToPos.y;
+                            this.isSnapped = false;
+                        }
                         
                         if (wire.waypoints) {
                             for (const wp of wire.waypoints) {
@@ -360,11 +406,66 @@ export class CircuitRenderer {
                             }
                         }
                     }
-                } else {
-                    // Move just the component
+                    this.snapPreviewHoles = [];
+                } else if (dragged.type === 'component') {
+                    // Move component with SNAP
                     const comp = this.circuitIR.components.find(c => c.id === this.selectedId);
-                    if (comp) {
-                        comp.position = { x: newBaseX, y: newBaseY };
+                    if (comp && snapMgr) {
+                        const footprint = getComponentFootprint(comp.category || 'ic', comp.pinCount, comp.type);
+                        
+                        if (footprint.straddlesChannel) {
+                            // IC component - snap using IC-specific method
+                            const pinsPerSide = comp.pinCount / 2;
+                            const firstPinOffsetX = 1;
+                            const snapResult = snapMgr.snapICComponent(
+                                { x: newBaseX, y: newBaseY },
+                                pinsPerSide,
+                                firstPinOffsetX,
+                                IC_PIN_LENGTH
+                            );
+                            
+                            comp.position.x = snapResult.bodyX;
+                            comp.position.y = snapResult.bodyY;
+                            this.isSnapped = snapResult.snapped;
+                            
+                            // Show snap preview for all IC pins
+                            if (snapResult.snapped && snapResult.snapCol) {
+                                const geo = this.boardGeometries.values().next().value as BreadboardGeometry;
+                                this.snapPreviewHoles = [];
+                                for (let i = 0; i < pinsPerSide; i++) {
+                                    this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + i, 'E'));
+                                    this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + i, 'F'));
+                                }
+                            } else {
+                                this.snapPreviewHoles = [];
+                            }
+                        } else {
+                            // Non-IC component - snap by first pin
+                            const pin1 = footprint.pins[0];
+                            const pin1Offset = { x: pin1.offsetX, y: pin1.offsetY };
+                            const snapResult = snapMgr.snapComponentByPin(
+                                { x: newBaseX, y: newBaseY },
+                                pin1Offset
+                            );
+                            
+                            comp.position.x = snapResult.bodyX;
+                            comp.position.y = snapResult.bodyY;
+                            this.isSnapped = snapResult.snapped;
+                            
+                            // Show snap preview
+                            if (snapResult.snapped && snapResult.snapCol && snapResult.snapRow) {
+                                const geo = this.boardGeometries.values().next().value as BreadboardGeometry;
+                                this.snapPreviewHoles = [];
+                                for (const pin of footprint.pins) {
+                                    const colOffset = Math.round(pin.offsetX / BreadboardGeometry.HOLE_SPACING);
+                                    this.snapPreviewHoles.push(
+                                        geo.getHolePosition(snapResult.snapCol + colOffset, snapResult.snapRow)
+                                    );
+                                }
+                            } else {
+                                this.snapPreviewHoles = [];
+                            }
+                        }
                     }
                 }
             }
@@ -374,6 +475,8 @@ export class CircuitRenderer {
         } else {
             // Not dragging - handle hover and tooltip
             const element = this.findElementAt(pos);
+            this.snapPreviewHoles = [];
+            this.isSnapped = false;
             
             // Update cursor
             if (element?.type === 'wire_terminal') {
@@ -424,6 +527,13 @@ export class CircuitRenderer {
     }
 
     private onMouseUp(): void {
+        if (this.isDragging) {
+            // Rebuild occupancy map after drag completes
+            this.rebuildOccupancy();
+            this.snapPreviewHoles = [];
+            this.isSnapped = false;
+            this.redraw();
+        }
         this.isDragging = false;
         this.canvas.style.cursor = 'default';
     }
@@ -432,6 +542,8 @@ export class CircuitRenderer {
         this.isDragging = false;
         this.canvas.style.cursor = 'default';
         this.hoveredComponentId = null;
+        this.snapPreviewHoles = [];
+        this.isSnapped = false;
         this.hideTooltip();
     }
 
@@ -456,19 +568,85 @@ export class CircuitRenderer {
     render(ir: CircuitIR): void {
         this.circuitIR = ir;
         this.boardGeometries.clear();
+        this.snapManagers.clear();
         this.draggables = [];
         this.selectedId = null;
+        this.snapPreviewHoles = [];
+        this.isSnapped = false;
         
-        // Create geometry for each board
+        // Create geometry and snap manager for each board
         for (const board of ir.boards) {
-            this.boardGeometries.set(
-                board.id, 
-                new BreadboardGeometry(board.position.x, board.position.y)
-            );
+            const geo = new BreadboardGeometry(board.position.x, board.position.y);
+            this.boardGeometries.set(board.id, geo);
+            this.snapManagers.set(board.id, new SnapManager(geo));
         }
         
+        // Register initial occupancy
+        this.rebuildOccupancy();
         this.rebuildDraggables();
         this.redraw();
+    }
+    
+    /**
+     * Rebuild occupancy map for all snap managers
+     * Called when components are placed or moved
+     */
+    private rebuildOccupancy(): void {
+        if (!this.circuitIR) return;
+        
+        // Clear and rebuild for each board
+        for (const [boardId, snapMgr] of this.snapManagers) {
+            snapMgr.clearOccupancy();
+            const geo = this.boardGeometries.get(boardId)!;
+            
+            // Register component pins
+            for (const comp of this.circuitIR.components) {
+                const footprint = getComponentFootprint(comp.category || 'ic', comp.pinCount, comp.type);
+                
+                if (footprint.straddlesChannel) {
+                    // IC pins in rows E and F
+                    const pinsPerSide = comp.pinCount / 2;
+                    const startCol = geo.getICStartColumn(comp.position.x);
+                    
+                    for (let i = 0; i < pinsPerSide; i++) {
+                        // Bottom pins (row F)
+                        snapMgr.registerPinOccupancy(startCol + i, 'F', comp.id, i + 1);
+                        // Top pins (row E)
+                        snapMgr.registerPinOccupancy(startCol + i, 'E', comp.id, comp.pinCount - i);
+                    }
+                } else {
+                    // Non-IC components - calculate pin columns from position
+                    for (const pin of footprint.pins) {
+                        const pinX = comp.position.x + pin.offsetX;
+                        const pinY = comp.position.y + pin.offsetY;
+                        const col = geo.getColumnAtX(pinX);
+                        const row = geo.getRowAtY(pinY);
+                        if (col > 0 && row) {
+                            snapMgr.registerPinOccupancy(col, row, comp.id, pin.number);
+                        }
+                    }
+                }
+            }
+            
+            // Register wire terminals
+            for (let i = 0; i < this.circuitIR.wires.length; i++) {
+                const wire = this.circuitIR.wires[i];
+                
+                // From terminal
+                const fromCol = geo.getColumnAtX(wire.from.x);
+                const fromRow = geo.getRowAtY(wire.from.y);
+                if (fromCol > 0 && fromRow) {
+                    snapMgr.registerWireOccupancy(fromCol, fromRow, i, 'from');
+                }
+                
+                // To terminal
+                const toCol = geo.getColumnAtX(wire.to.x);
+                const toRow = geo.getRowAtY(wire.to.y);
+                if (toCol > 0 && toRow) {
+                    snapMgr.registerWireOccupancy(toCol, toRow, i, 'to');
+                }
+            }
+        }
     }
 
     private rebuildDraggables(): void {
@@ -579,6 +757,9 @@ export class CircuitRenderer {
             this.renderBoard(board);
         }
         
+        // Render snap preview highlights (before components, so they appear behind)
+        this.renderSnapPreview();
+        
         for (const comp of this.circuitIR.components) {
             this.renderComponent(comp);
         }
@@ -588,6 +769,35 @@ export class CircuitRenderer {
         }
         
         this.ctx.restore();
+    }
+    
+    /**
+     * Render visual feedback for snap targets
+     */
+    private renderSnapPreview(): void {
+        if (this.snapPreviewHoles.length === 0) return;
+        
+        const S = BASE_SCALE;
+        
+        for (const hole of this.snapPreviewHoles) {
+            const x = hole.x * S;
+            const y = hole.y * S;
+            
+            // Green highlight ring around snap target hole
+            this.ctx.strokeStyle = this.isSnapped ? '#00cc00' : '#ffcc00';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, 4, 0, Math.PI * 2);
+            this.ctx.stroke();
+            
+            // Filled center if snapped
+            if (this.isSnapped) {
+                this.ctx.fillStyle = 'rgba(0, 204, 0, 0.3)';
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, 4, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+        }
     }
 
     clear(): void {
