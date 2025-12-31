@@ -169,11 +169,8 @@ void SemanticAnalyzer::analyzeCompDecl(const CompDeclNode& node) {
         }
     }
     
-    if (!isBuiltin && !isCustom) {
-        reportError("Unknown component type: '" + node.componentType + "'", node.location);
-        return;
-    }
-    
+    // For unknown types, allow them as generic components
+    // This enables @comp to be used as an escape hatch for custom/arbitrary components
     Symbol sym(node.identifier, SymbolKind::COMPONENT, node.componentType, node.location);
     
     // Copy pin info if custom IC

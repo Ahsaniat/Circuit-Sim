@@ -1,0 +1,150 @@
+// CircuitSim Comprehensive Test Circuit
+// Tests all component keywords and language features
+
+// =====================================================
+// PASSIVE COMPONENTS
+// =====================================================
+@resistor R1 10k
+@resistor R2 4.7k
+@resistor R3 330
+@capacitor C1 100uF
+@capacitor C2 0.1uF
+@inductor L1 10mH
+@potentiometer P1 10k
+
+// =====================================================
+// DIODES
+// =====================================================
+@diode D1
+@zener_diode Z1 5.1V
+@schottky_diode S1
+
+// =====================================================
+// LEDs AND OPTICAL COMPONENTS
+// =====================================================
+@led LED1 red
+@led LED2 green
+@ir_led IR1
+@photodiode PD1
+@ldr LDR1
+
+// =====================================================
+// TRANSISTORS - BJT
+// =====================================================
+@npn Q1 2N2222
+@npn Q2 BC547
+@pnp Q3 2N2907
+
+// =====================================================
+// TRANSISTORS - MOSFET
+// =====================================================
+@nmos M1 2N7000
+@pmos M2 IRF9540
+
+// =====================================================
+// LOGIC GATES - 2 INPUT
+// =====================================================
+@AND A1 7408
+@OR O1 7432
+@XOR X1 7486
+@NAND N1 7400
+@NOR NR1 7402
+@NOT I1 7404
+
+// =====================================================
+// LOGIC GATES - 3 INPUT
+// =====================================================
+@AND3 A3_1 7411
+@NAND3 N3_1 7410
+@NOR3 NR3_1 7427
+
+// =====================================================
+// LOGIC GATES - 4 INPUT
+// =====================================================
+@AND4 A4_1 7421
+@NAND4 N4_1 7420
+
+// =====================================================
+// MULTIPLEXERS
+// =====================================================
+@mux_4x1 MUX1 74153
+@mux_8x1 MUX2 74151
+
+// =====================================================
+// DECODERS AND ENCODERS
+// =====================================================
+@decoder_3to8 DEC1 74138
+@decoder_2to4 DEC2 74139
+@encoder_8to3 ENC1 74148
+
+// =====================================================
+// SHIFT REGISTERS
+// =====================================================
+@shift_reg_8 SR1 74164
+@shift_reg_8_parallel SR2 74165
+
+// =====================================================
+// FLIP-FLOPS AND LATCHES
+// =====================================================
+@d_flipflop FF1 7474
+@jk_flipflop FF2 7476
+@latch_8 LAT1 74373
+
+// =====================================================
+// COUNTERS
+// =====================================================
+@counter_4bit CNT1 74161
+@counter_decade CNT2 7490
+
+// =====================================================
+// GENERIC/CUSTOM COMPONENTS
+// =====================================================
+@comp U1 ATmega328P
+@comp IC1 LM7805
+@comp TIMER1 555
+
+// =====================================================
+// BOARD
+// =====================================================
+@board B1 breadboard_830
+
+// =====================================================
+// PIN MAPPINGS - Testing various connection scenarios
+// =====================================================
+map (
+    // AND gate to OR gate
+    (A1 pin 3 -> O1 pin 1)
+    (A1 pin 6 -> O1 pin 2)
+    
+    // OR gate output to XOR
+    (O1 pin 3 -> X1 pin 1)
+    
+    // NAND gate chain
+    (N1 pin 3 -> N1 pin 4)
+    
+    // Resistor to LED circuit
+    (R1 pin 2 -> LED1 pin 1)
+    (R2 pin 2 -> LED2 pin 1)
+    
+    // Transistor circuit
+    (R3 pin 2 -> Q1 pin 1)
+    (Q1 pin 2 -> R1 pin 1)
+    
+    // Multiple destinations from one source
+    (A1 pin 11 -> O1 pin 4, X1 pin 2, N1 pin 1)
+    
+    // Multiplexer connections
+    (MUX1 pin 7 -> A1 pin 1)
+    
+    // Decoder to gates
+    (DEC1 pin 15 -> A1 pin 2)
+    
+    // Shift register output
+    (SR1 pin 3 -> R3 pin 1)
+    
+    // Flip-flop chain
+    (FF1 pin 5 -> FF1 pin 11)
+    
+    // Counter output
+    (CNT1 pin 11 -> DEC1 pin 1)
+)

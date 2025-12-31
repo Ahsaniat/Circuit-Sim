@@ -316,8 +316,9 @@ Token Lexer::scanIdentifierOrKeyword() {
         return makeToken(TokenType::COMPONENT_TYPE, text);
     }
     
-    // Check for board types (contain underscore, like "breadboard_830")
-    if (text.find('_') != std::string::npos) {
+    // Check for known board types specifically (breadboard_830, breadboard_400, breadboard_170)
+    // Don't classify arbitrary underscore identifiers as COMPONENT_TYPE
+    if (text.find("breadboard_") == 0) {
         return makeToken(TokenType::COMPONENT_TYPE, text);
     }
     
