@@ -17,12 +17,16 @@ export interface Wire {
     waypoints?: Position[];
 }
 
+export type ComponentCategory = 'ic' | 'passive' | 'diode' | 'transistor' | 'led' | 'sensor';
+
 export interface ComponentIR {
     id: string;
     type: string;
     pinCount: number;
     position: Position;
     size: { width: number; height: number };
+    category?: ComponentCategory;
+    value?: string;  // For resistors (10k), capacitors (100uF), etc.
 }
 
 export interface BoardIR {

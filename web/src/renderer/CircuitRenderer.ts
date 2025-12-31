@@ -1,8 +1,10 @@
 import { CircuitIR, ComponentIR, BoardIR, Wire, Position } from '../types';
 import { BreadboardGeometry } from '../geometry/BreadboardGeometry';
 
-const SCALE = 4;  // Pixels per base unit
+const BASE_SCALE = 4;  // Pixels per base unit
 const PADDING = 20;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
 
 // IC rendering constants derived from geometry
 // IC straddles channel: top pins in row E, bottom pins in row F
@@ -35,6 +37,11 @@ export class CircuitRenderer {
     private selectedId: string | null = null;
     private isDragging = false;
     private dragOffset = { x: 0, y: 0 };
+    
+    // Zoom and pan state
+    private zoom = 1;
+    private panX = 0;
+    private panY = 0;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -51,14 +58,50 @@ export class CircuitRenderer {
         this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
         this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
         this.canvas.addEventListener('mouseleave', this.onMouseUp.bind(this));
+        this.canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
     }
 
     private getMousePos(e: MouseEvent): Position {
         const rect = this.canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        // Convert screen coordinates to canvas world coordinates
+        const canvasX = (e.clientX - rect.left) * dpr;
+        const canvasY = (e.clientY - rect.top) * dpr;
+        // Account for pan and padding
         return { 
-            x: e.clientX - rect.left - PADDING, 
-            y: e.clientY - rect.top - PADDING 
+            x: (canvasX / dpr - PADDING - this.panX) / this.zoom, 
+            y: (canvasY / dpr - PADDING - this.panY) / this.zoom
         };
+    }
+    
+    private onWheel(e: WheelEvent): void {
+        e.preventDefault();
+        
+        const rect = this.canvas.getBoundingClientRect();
+        // Mouse position in screen space (relative to canvas)
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        // Calculate zoom factor
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom * zoomFactor));
+        
+        if (newZoom !== this.zoom) {
+            // Adjust pan to keep mouse point stationary
+            // Before zoom: screenPos = (worldPos * zoom) + pan + padding
+            // After zoom: screenPos = (worldPos * newZoom) + newPan + padding
+            // We want the same worldPos under the mouse, so:
+            // (mouseX - padding - panX) / zoom = (mouseX - padding - newPanX) / newZoom
+            const worldX = (mouseX - PADDING - this.panX) / this.zoom;
+            const worldY = (mouseY - PADDING - this.panY) / this.zoom;
+            
+            this.panX = mouseX - PADDING - worldX * newZoom;
+            this.panY = mouseY - PADDING - worldY * newZoom;
+            this.zoom = newZoom;
+            
+            this.rebuildDraggables();
+            this.redraw();
+        }
     }
 
     private findElementAt(pos: Position): DraggableElement | null {
@@ -94,10 +137,9 @@ export class CircuitRenderer {
         const pos = this.getMousePos(e);
         
         if (this.isDragging && this.selectedId && this.circuitIR) {
-            const newX = pos.x - this.dragOffset.x;
-            const newY = pos.y - this.dragOffset.y;
-            const newBaseX = newX / SCALE;
-            const newBaseY = newY / SCALE;
+            // pos is now in base units (world coordinates)
+            const newBaseX = pos.x - this.dragOffset.x;
+            const newBaseY = pos.y - this.dragOffset.y;
             
             // Find the dragged element
             const dragged = this.draggables.find(d => d.id === this.selectedId);
@@ -199,16 +241,17 @@ export class CircuitRenderer {
         if (!this.circuitIR) return;
         
         // Add boards first (so they're checked last during hit testing)
+        // Draggables now store base units, not scaled pixels
         for (const board of this.circuitIR.boards) {
             const geo = this.boardGeometries.get(board.id);
             if (geo) {
                 this.draggables.push({
                     id: board.id,
                     type: 'board',
-                    x: geo.x * SCALE,
-                    y: geo.y * SCALE,
-                    width: geo.width * SCALE,
-                    height: geo.height * SCALE
+                    x: geo.x,
+                    y: geo.y,
+                    width: geo.width,
+                    height: geo.height
                 });
             }
         }
@@ -220,10 +263,10 @@ export class CircuitRenderer {
             this.draggables.push({
                 id: comp.id,
                 type: 'component',
-                x: comp.position.x * SCALE,
-                y: comp.position.y * SCALE,
-                width: width * SCALE,
-                height: height * SCALE,
+                x: comp.position.x,
+                y: comp.position.y,
+                width: width,
+                height: height,
                 parentBoardId: this.circuitIR.boards[0]?.id
             });
         }
@@ -248,7 +291,9 @@ export class CircuitRenderer {
         
         this.clear();
         this.ctx.save();
-        this.ctx.translate(PADDING, PADDING);
+        // Apply pan and zoom transforms
+        this.ctx.translate(PADDING + this.panX, PADDING + this.panY);
+        this.ctx.scale(this.zoom, this.zoom);
         
         for (const board of this.circuitIR.boards) {
             this.renderBoard(board);
@@ -277,20 +322,21 @@ export class CircuitRenderer {
         const geo = this.boardGeometries.get(board.id);
         if (!geo) return;
         
-        const x = geo.x * SCALE;
-        const y = geo.y * SCALE;
-        const w = geo.width * SCALE;
-        const h = geo.height * SCALE;
-        const holeSpacing = BreadboardGeometry.HOLE_SPACING * SCALE;
+        const S = BASE_SCALE;  // Base scale factor
+        const x = geo.x * S;
+        const y = geo.y * S;
+        const w = geo.width * S;
+        const h = geo.height * S;
+        const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
         const numCols = BreadboardGeometry.NUM_COLS;
-        const railHeight = BreadboardGeometry.RAIL_HEIGHT * SCALE;
-        const channelHeight = BreadboardGeometry.CHANNEL_HEIGHT * SCALE;
+        const railHeight = BreadboardGeometry.RAIL_HEIGHT * S;
+        const channelHeight = BreadboardGeometry.CHANNEL_HEIGHT * S;
         
         // Selection highlight for board
         if (this.selectedId === board.id) {
             this.ctx.strokeStyle = '#0066cc';
-            this.ctx.lineWidth = 3;
-            this.ctx.setLineDash([6, 3]);
+            this.ctx.lineWidth = 3 / this.zoom;
+            this.ctx.setLineDash([6 / this.zoom, 3 / this.zoom]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 8);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -299,7 +345,7 @@ export class CircuitRenderer {
         // Board background
         this.ctx.fillStyle = '#e8e4df';
         this.ctx.strokeStyle = '#bbb';
-        this.ctx.lineWidth = 1;
+        this.ctx.lineWidth = 1 / this.zoom;
         this.roundRect(x, y, w, h, 6);
         this.ctx.fill();
         this.ctx.stroke();
@@ -310,7 +356,7 @@ export class CircuitRenderer {
         this.ctx.fillRect(x + 6, topRailY, w - 12, railHeight - 4);
         
         // + and - labels only (no colored strips)
-        this.ctx.font = 'bold 10px sans-serif';
+        this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
         this.ctx.textAlign = 'left';
         this.ctx.fillStyle = '#c44';
         this.ctx.fillText('+', x + 8, topRailY + 10);
@@ -318,7 +364,7 @@ export class CircuitRenderer {
         this.ctx.fillText('−', x + 8, topRailY + railHeight - 8);
         
         // Top rail holes
-        const holesStartX = geo.holesStartX * SCALE;
+        const holesStartX = geo.holesStartX * S;
         this.ctx.fillStyle = '#222';
         for (let col = 0; col < numCols; col++) {
             const hx = holesStartX + col * holeSpacing;
@@ -336,6 +382,7 @@ export class CircuitRenderer {
         this.ctx.fillRect(x + 6, bottomRailY, w - 12, railHeight - 4);
         
         // + and - labels
+        this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
         this.ctx.fillStyle = '#c44';
         this.ctx.fillText('+', x + 8, bottomRailY + 10);
         this.ctx.fillStyle = '#44c';
@@ -353,10 +400,13 @@ export class CircuitRenderer {
             this.ctx.fill();
         }
 
-        // Center channel
-        const channelY = geo.channelY * SCALE - channelHeight / 2;
+        // Center channel - positioned exactly between rows E and F
+        // Row E Y position and Row F Y position from geometry
+        const rowEHole = geo.getHolePosition(1, 'E');
+        const rowFHole = geo.getHolePosition(1, 'F');
+        const channelCenterY = ((rowEHole.y + rowFHole.y) / 2) * S;
         this.ctx.fillStyle = '#c8c4bf';
-        this.ctx.fillRect(x + 8, channelY, w - 16, channelHeight);
+        this.ctx.fillRect(x + 8, channelCenterY - channelHeight / 2, w - 16, channelHeight);
 
         // Main holes - using geometry for accurate positions
         this.ctx.fillStyle = '#222';
@@ -364,14 +414,14 @@ export class CircuitRenderer {
             for (let col = 1; col <= numCols; col++) {
                 const hole = geo.getHolePosition(col, row);
                 this.ctx.beginPath();
-                this.ctx.arc(hole.x * SCALE, hole.y * SCALE, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(hole.x * S, hole.y * S, 1.5, 0, Math.PI * 2);
                 this.ctx.fill();
             }
         }
 
         // Column numbers
         this.ctx.fillStyle = '#888';
-        this.ctx.font = '8px sans-serif';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
         this.ctx.textAlign = 'center';
         for (let col = 1; col <= numCols; col += 5) {
             const hx = holesStartX + (col - 1) * holeSpacing;
@@ -382,34 +432,35 @@ export class CircuitRenderer {
         this.ctx.textAlign = 'right';
         for (const row of BreadboardGeometry.TOP_ROWS) {
             const hole = geo.getHolePosition(1, row);
-            this.ctx.fillText(row, x - 4, hole.y * SCALE + 3);
+            this.ctx.fillText(row, x - 4, hole.y * S + 3);
         }
         for (const row of BreadboardGeometry.BOTTOM_ROWS) {
             const hole = geo.getHolePosition(1, row);
-            this.ctx.fillText(row, x - 4, hole.y * SCALE + 3);
+            this.ctx.fillText(row, x - 4, hole.y * S + 3);
         }
     }
 
     private renderComponent(comp: ComponentIR): void {
-        const x = comp.position.x * SCALE;
-        const y = comp.position.y * SCALE;
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
         const pinsPerSide = comp.pinCount / 2;
-        const holeSpacing = BreadboardGeometry.HOLE_SPACING * SCALE;
+        const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
         
         // Use geometry-derived dimensions for consistent alignment
         const { width, height, pinLength } = this.getICDimensions(comp.pinCount);
-        const icWidth = width * SCALE;
-        const icHeight = height * SCALE;
-        const pinLengthPx = pinLength * SCALE;
+        const icWidth = width * S;
+        const icHeight = height * S;
+        const pinLengthPx = pinLength * S;
         
         // Calculate first pin X offset from body left edge (1 base unit = body margin)
-        const firstPinOffset = 1 * SCALE;
+        const firstPinOffset = 1 * S;
 
         // Selection highlight
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = '#0066cc';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([4, 2]);
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
             this.roundRect(x - 4, y - pinLengthPx - 4, icWidth + 8, icHeight + pinLengthPx * 2 + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -418,7 +469,7 @@ export class CircuitRenderer {
         // IC body
         this.ctx.fillStyle = '#1a1a1a';
         this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 1;
+        this.ctx.lineWidth = 1 / this.zoom;
         this.roundRect(x, y, icWidth, icHeight, 3);
         this.ctx.fill();
         this.ctx.stroke();
@@ -454,26 +505,27 @@ export class CircuitRenderer {
 
         // IC label
         this.ctx.fillStyle = '#999';
-        this.ctx.font = 'bold 9px monospace';
+        this.ctx.font = `bold ${9 / this.zoom}px monospace`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(comp.type, x + icWidth / 2, y + icHeight / 2);
         
         // Component ID
         this.ctx.fillStyle = '#666';
-        this.ctx.font = '10px sans-serif';
+        this.ctx.font = `${10 / this.zoom}px sans-serif`;
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + icWidth / 2, y + icHeight + pinLengthPx + 4);
     }
 
     private renderWire(wire: Wire): void {
-        const fromX = wire.from.x * SCALE;
-        const fromY = wire.from.y * SCALE;
-        const toX = wire.to.x * SCALE;
-        const toY = wire.to.y * SCALE;
+        const S = BASE_SCALE;
+        const fromX = wire.from.x * S;
+        const fromY = wire.from.y * S;
+        const toX = wire.to.x * S;
+        const toY = wire.to.y * S;
 
         this.ctx.strokeStyle = wire.color;
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 2 / this.zoom;
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
 
@@ -482,7 +534,7 @@ export class CircuitRenderer {
 
         if (wire.waypoints) {
             for (const wp of wire.waypoints) {
-                this.ctx.lineTo(wp.x * SCALE, wp.y * SCALE);
+                this.ctx.lineTo(wp.x * S, wp.y * S);
             }
         }
 

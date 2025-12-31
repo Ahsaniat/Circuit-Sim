@@ -11,6 +11,8 @@ interface Token {
 interface CompDecl {
     id: string;
     type: string;
+    value?: string;  // For resistors, capacitors, etc.
+    category: ComponentCategory;
 }
 
 interface BoardDecl {
@@ -34,17 +36,104 @@ interface ParsedProgram {
     connections: Connection[];
 }
 
+// Component categories for different rendering and pin layouts
+type ComponentCategory = 'ic' | 'passive' | 'diode' | 'transistor' | 'led' | 'sensor';
+
 const KEYWORDS = new Set(['def', 'map', 'pin', 'input', 'output', 'gnd', 'vcc']);
 
+// Component type keywords that can be used with @keyword syntax
+const COMPONENT_KEYWORDS: Record<string, { category: ComponentCategory; defaultType: string; pinCount: number }> = {
+    // Passive components (2 pins)
+    'resistor': { category: 'passive', defaultType: 'RES', pinCount: 2 },
+    'capacitor': { category: 'passive', defaultType: 'CAP', pinCount: 2 },
+    'inductor': { category: 'passive', defaultType: 'IND', pinCount: 2 },
+    'potentiometer': { category: 'passive', defaultType: 'POT', pinCount: 3 },
+    
+    // Diodes (2 pins)
+    'diode': { category: 'diode', defaultType: 'DIODE', pinCount: 2 },
+    'zener_diode': { category: 'diode', defaultType: 'ZENER', pinCount: 2 },
+    'schottky_diode': { category: 'diode', defaultType: 'SCHOTTKY', pinCount: 2 },
+    
+    // LEDs and optical (2-3 pins)
+    'led': { category: 'led', defaultType: 'LED', pinCount: 2 },
+    'ir_led': { category: 'led', defaultType: 'IR_LED', pinCount: 2 },
+    'photodiode': { category: 'led', defaultType: 'PHOTODIODE', pinCount: 2 },
+    'ldr': { category: 'sensor', defaultType: 'LDR', pinCount: 2 },
+    
+    // Transistors (3 pins)
+    'npn': { category: 'transistor', defaultType: 'NPN', pinCount: 3 },
+    'pnp': { category: 'transistor', defaultType: 'PNP', pinCount: 3 },
+    'nmos': { category: 'transistor', defaultType: 'NMOS', pinCount: 3 },
+    'pmos': { category: 'transistor', defaultType: 'PMOS', pinCount: 3 },
+    
+    // Logic gates - dual input (14 pins, quad package)
+    'AND': { category: 'ic', defaultType: '7408', pinCount: 14 },
+    'OR': { category: 'ic', defaultType: '7432', pinCount: 14 },
+    'XOR': { category: 'ic', defaultType: '7486', pinCount: 14 },
+    'NAND': { category: 'ic', defaultType: '7400', pinCount: 14 },
+    'NOR': { category: 'ic', defaultType: '7402', pinCount: 14 },
+    'NOT': { category: 'ic', defaultType: '7404', pinCount: 14 },
+    
+    // Triple 3-input gates
+    'AND3': { category: 'ic', defaultType: '7411', pinCount: 14 },
+    'NAND3': { category: 'ic', defaultType: '7410', pinCount: 14 },
+    'NOR3': { category: 'ic', defaultType: '7427', pinCount: 14 },
+    
+    // Dual 4-input gates
+    'AND4': { category: 'ic', defaultType: '7421', pinCount: 14 },
+    'NAND4': { category: 'ic', defaultType: '7420', pinCount: 14 },
+    
+    // Multiplexers
+    'mux_4x1': { category: 'ic', defaultType: '74153', pinCount: 16 },
+    'mux_8x1': { category: 'ic', defaultType: '74151', pinCount: 16 },
+    
+    // Decoders/Encoders
+    'decoder_3to8': { category: 'ic', defaultType: '74138', pinCount: 16 },
+    'decoder_2to4': { category: 'ic', defaultType: '74139', pinCount: 16 },
+    'encoder_8to3': { category: 'ic', defaultType: '74148', pinCount: 16 },
+    
+    // Shift registers
+    'shift_reg_8': { category: 'ic', defaultType: '74164', pinCount: 14 },
+    'shift_reg_8_parallel': { category: 'ic', defaultType: '74165', pinCount: 16 },
+    
+    // Flip-flops and latches
+    'd_flipflop': { category: 'ic', defaultType: '7474', pinCount: 14 },
+    'jk_flipflop': { category: 'ic', defaultType: '7476', pinCount: 16 },
+    'latch_8': { category: 'ic', defaultType: '74373', pinCount: 20 },
+    
+    // Counters
+    'counter_4bit': { category: 'ic', defaultType: '74161', pinCount: 16 },
+    'counter_decade': { category: 'ic', defaultType: '7490', pinCount: 14 },
+};
+
+// Built-in IC pin counts (extended)
 const BUILTIN_ICS: Record<string, number> = {
+    // 74xx series - basic gates
     '7400': 14, '7402': 14, '7404': 14, '7408': 14,
-    '7410': 14, '7420': 14, '7432': 14, '7486': 14,
-    '7447': 16, '7474': 14, '7490': 14,
-    '74138': 16, '74139': 16, '74151': 16, '74153': 16,
-    '74161': 16, '74164': 14, '74173': 16, '74181': 24,
+    '7410': 14, '7411': 14, '7420': 14, '7421': 14,
+    '7427': 14, '7432': 14, '7486': 14,
+    
+    // 74xx series - flip-flops and counters
+    '7447': 16, '7474': 14, '7476': 16, '7490': 14,
+    
+    // 74xx series - decoders, mux, shift registers
+    '74138': 16, '74139': 16, '74148': 16,
+    '74151': 16, '74153': 16,
+    '74161': 16, '74164': 14, '74165': 16,
+    '74173': 16, '74181': 24,
     '74245': 20, '74373': 20, '74374': 20,
+    
+    // Timer ICs
     '555': 8, 'NE555': 8,
-    '741': 8, 'LM741': 8, 'LM358': 8
+    
+    // Op-amps
+    '741': 8, 'LM741': 8, 'LM358': 8,
+    
+    // Simple components (2-3 pins)
+    'RES': 2, 'CAP': 2, 'IND': 2, 'POT': 3,
+    'DIODE': 2, 'ZENER': 2, 'SCHOTTKY': 2,
+    'LED': 2, 'IR_LED': 2, 'PHOTODIODE': 2, 'LDR': 2,
+    'NPN': 3, 'PNP': 3, 'NMOS': 3, 'PMOS': 3,
 };
 
 export class CompileError extends Error {
@@ -134,13 +223,20 @@ class Lexer {
 
     private scanAtKeyword(startCol: number): void {
         let keyword = '';
-        while (!this.isAtEnd() && this.isAlpha(this.peek())) {
+        while (!this.isAtEnd() && (this.isAlphaNumeric(this.peek()) || this.peek() === '_')) {
             keyword += this.advance();
         }
+        
         if (keyword === 'comp') {
             this.addToken('COMP', '@comp', startCol);
         } else if (keyword === 'board') {
             this.addToken('BOARD', '@board', startCol);
+        } else if (COMPONENT_KEYWORDS[keyword]) {
+            // New component-specific keywords like @resistor, @AND, @led, etc.
+            this.addToken('COMP_TYPE', '@' + keyword, startCol);
+        } else {
+            // Unknown @ keyword, treat as COMP for backwards compatibility
+            this.addToken('UNKNOWN_AT', '@' + keyword, startCol);
         }
     }
 
@@ -206,6 +302,9 @@ class Parser {
         while (!this.isAtEnd()) {
             if (this.match('COMP')) {
                 program.components.push(this.parseCompDecl());
+            } else if (this.match('COMP_TYPE')) {
+                // New syntax: @resistor R1 10k, @AND A1 7408
+                program.components.push(this.parseTypedCompDecl());
             } else if (this.match('BOARD')) {
                 program.boards.push(this.parseBoardDecl());
             } else if (this.match('MAP')) {
@@ -223,7 +322,49 @@ class Parser {
     private parseCompDecl(): CompDecl {
         const id = this.consume('IDENTIFIER', 'Expected component identifier').lexeme;
         const type = this.consumeAny(['IDENTIFIER', 'NUMBER'], 'Expected component type').lexeme;
-        return { id, type };
+        return { id, type, category: 'ic' };
+    }
+    
+    private parseTypedCompDecl(): CompDecl {
+        // Previous token was COMP_TYPE like @resistor, @AND, etc.
+        const compTypeToken = this.tokens[this.current - 1];
+        const compKeyword = compTypeToken.lexeme.substring(1); // Remove @
+        
+        const compInfo = COMPONENT_KEYWORDS[compKeyword];
+        if (!compInfo) {
+            throw new CompileError(`Unknown component type: ${compKeyword}`, compTypeToken.line, compTypeToken.column);
+        }
+        
+        // Parse component identifier
+        const id = this.consume('IDENTIFIER', 'Expected component identifier').lexeme;
+        
+        // Parse optional value or IC number
+        let type = compInfo.defaultType;
+        let value: string | undefined;
+        
+        if (!this.isAtEnd() && !this.check('COMP') && !this.check('COMP_TYPE') && 
+            !this.check('BOARD') && !this.check('MAP') && !this.check('DEF')) {
+            // Check for value/type specification
+            if (this.check('NUMBER') || this.check('IDENTIFIER')) {
+                const valueToken = this.advance();
+                // For passive components, this is the value (10k, 100uF)
+                // For ICs/gates, this might be the IC number (7408)
+                if (compInfo.category === 'passive' || compInfo.category === 'diode' || 
+                    compInfo.category === 'led' || compInfo.category === 'sensor' ||
+                    compInfo.category === 'transistor') {
+                    value = valueToken.lexeme;
+                } else {
+                    // For ICs, use as type if it's a valid IC number
+                    if (BUILTIN_ICS[valueToken.lexeme]) {
+                        type = valueToken.lexeme;
+                    } else {
+                        value = valueToken.lexeme;
+                    }
+                }
+            }
+        }
+        
+        return { id, type, value, category: compInfo.category };
     }
 
     private parseBoardDecl(): BoardDecl {
@@ -442,7 +583,9 @@ class IRGenerator {
             type: comp.type,
             pinCount,
             position: { x: 0, y: 0 },
-            size: { width, height }
+            size: { width, height },
+            category: comp.category,
+            value: comp.value
         };
     }
 

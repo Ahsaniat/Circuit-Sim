@@ -5,17 +5,33 @@ CircuitSim is a domain-specific language for describing electronic circuits with
 ## Table of Contents
 
 1. [Quick Start](#quick-start)
-2. [Components](#components)
+2. [Component Syntax](#component-syntax)
 3. [Boards](#boards)
-4. [Custom IC Definitions](#custom-ic-definitions)
-5. [Pin Mapping](#pin-mapping)
-6. [Built-in Components](#built-in-components)
+4. [Pin Mapping](#pin-mapping)
+5. [Built-in Components](#built-in-components)
+6. [Custom IC Definitions](#custom-ic-definitions)
 7. [Comments](#comments)
 8. [Examples](#examples)
+9. [Canvas Controls](#canvas-controls)
 
 ---
 
 ## Quick Start
+
+```
+// New syntax - use component-specific keywords
+@AND A1 7408
+@resistor R1 10k
+@led D1 red
+@board B1 breadboard_830
+
+map (
+    (A1 pin 3 -> R1 pin 1)
+    (R1 pin 2 -> D1 pin 1)
+)
+```
+
+Or use the generic syntax:
 
 ```
 @comp A1 7408
@@ -26,38 +42,171 @@ map (
 )
 ```
 
-This creates a 7408 AND gate IC named `A1` on a breadboard `B1`, connecting pin 3 of the IC to column 5 on the breadboard.
-
 ---
 
-## Components
+## Component Syntax
 
-### Syntax
+CircuitSim supports two syntaxes for declaring components:
+
+### Type-Specific Keywords (Recommended)
+
+Use `@<component_type>` for clearer, self-documenting code:
+
+```
+@<component_type> <identifier> [value_or_part_number]
+```
+
+| Syntax | Example | Description |
+|--------|---------|-------------|
+| `@resistor` | `@resistor R1 10k` | Resistor with value |
+| `@capacitor` | `@capacitor C1 100uF` | Capacitor with value |
+| `@led` | `@led D1 red` | LED (color optional) |
+| `@AND` | `@AND A1 7408` | AND gate IC |
+| `@npn` | `@npn Q1 2N2222` | NPN transistor |
+
+### Generic Syntax
+
+For custom or unrecognized components:
 
 ```
 @comp <identifier> <component_type>
 ```
 
-### Parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `identifier` | User-defined name for the component (e.g., `A1`, `U1`, `IC1`) |
-| `component_type` | IC part number (e.g., `7408`, `555`, `74161`) |
-
-### Example
-
+Example:
 ```
-@comp A1 7408    // 7408 quad AND gate, labeled A1
-@comp U2 7432    // 7432 quad OR gate, labeled U2
-@comp T1 555     // 555 timer IC
+@comp U1 ATmega328P
+@comp IC1 LM7805
 ```
 
-### Notes
+---
 
-- Identifiers must start with a letter and can contain letters, numbers, and underscores
-- Each identifier must be unique within the circuit
-- Components are automatically placed on the breadboard straddling the center channel
+## Passive Components
+
+### Resistors, Capacitors, Inductors
+
+```
+@resistor R1 10k       // 10kΩ resistor
+@resistor R2 4.7k      // 4.7kΩ resistor
+@capacitor C1 100uF    // 100µF capacitor
+@capacitor C2 0.1uF    // 100nF capacitor
+@inductor L1 10mH      // 10mH inductor
+@potentiometer P1 10k  // 10kΩ potentiometer (3 pins)
+```
+
+### Diodes
+
+```
+@diode D1              // Standard diode
+@zener_diode Z1 5.1V   // 5.1V Zener diode
+@schottky_diode S1     // Schottky diode
+```
+
+### LEDs and Optical Components
+
+```
+@led LED1 red          // Red LED
+@led LED2 green        // Green LED
+@ir_led IR1            // Infrared LED
+@photodiode PD1        // Photodiode
+@ldr LDR1              // Light Dependent Resistor
+```
+
+---
+
+## Transistors
+
+### BJT Transistors
+
+```
+@npn Q1 2N2222         // NPN transistor
+@npn Q2 BC547          // NPN transistor
+@pnp Q3 2N2907         // PNP transistor
+```
+
+### MOSFETs
+
+```
+@nmos M1 2N7000        // N-channel MOSFET
+@pmos M2 IRF9540       // P-channel MOSFET
+```
+
+Pin order: 1=Base/Gate, 2=Collector/Drain, 3=Emitter/Source
+
+---
+
+## Logic Gates
+
+### 2-Input Gates (Quad packages, 14 pins)
+
+```
+@AND A1 7408           // Quad 2-input AND gate
+@AND A2                // Uses default 7408
+@OR O1 7432            // Quad 2-input OR gate
+@XOR X1 7486           // Quad 2-input XOR gate
+@NAND N1 7400          // Quad 2-input NAND gate
+@NOR NR1 7402          // Quad 2-input NOR gate
+@NOT I1 7404           // Hex inverter (NOT gate)
+```
+
+### 3-Input Gates (Triple packages, 14 pins)
+
+```
+@AND3 A1 7411          // Triple 3-input AND gate
+@NAND3 N1 7410         // Triple 3-input NAND gate
+@NOR3 NR1 7427         // Triple 3-input NOR gate
+```
+
+### 4-Input Gates (Dual packages, 14 pins)
+
+```
+@AND4 A1 7421          // Dual 4-input AND gate
+@NAND4 N1 7420         // Dual 4-input NAND gate
+```
+
+---
+
+## Multiplexers and Decoders
+
+### Multiplexers
+
+```
+@mux_4x1 M1 74153      // Dual 4-to-1 multiplexer
+@mux_8x1 M2 74151      // 8-to-1 multiplexer
+```
+
+### Decoders and Encoders
+
+```
+@decoder_3to8 D1 74138 // 3-to-8 line decoder
+@decoder_2to4 D2 74139 // Dual 2-to-4 line decoder
+@encoder_8to3 E1 74148 // 8-to-3 priority encoder
+```
+
+---
+
+## Shift Registers and Flip-Flops
+
+### Shift Registers
+
+```
+@shift_reg_8 SR1 74164          // 8-bit serial-in parallel-out
+@shift_reg_8_parallel SR2 74165 // 8-bit parallel-in serial-out
+```
+
+### Flip-Flops and Latches
+
+```
+@d_flipflop FF1 7474   // Dual D flip-flop
+@jk_flipflop FF2 7476  // Dual JK flip-flop
+@latch_8 L1 74373      // Octal transparent latch
+```
+
+### Counters
+
+```
+@counter_4bit C1 74161   // 4-bit binary counter
+@counter_decade C2 7490  // Decade counter
+```
 
 ---
 
@@ -77,75 +226,31 @@ This creates a 7408 AND gate IC named `A1` on a breadboard `B1`, connecting pin 
 | `breadboard_400` | Half-size 400-point breadboard |
 | `breadboard_170` | Mini 170-point breadboard |
 
-### Example
-
-```
-@board B1 breadboard_830
-```
-
 ### Breadboard Layout
 
 ```
      1   2   3   4   5  ...  63
    +-----------------------------+
-   |  + Power Rail (Red)         |
+   |  + Power Rail               |
    +-----------------------------+
  A |  o   o   o   o   o  ...  o  |
  B |  o   o   o   o   o  ...  o  |  Top Half
- C |  o   o   o   o   o  ...  o  |  (rows A-E connected vertically)
+ C |  o   o   o   o   o  ...  o  |  (rows A-E shorted)
  D |  o   o   o   o   o  ...  o  |
  E |  o   o   o   o   o  ...  o  |
    +=============================+  Center Channel
  F |  o   o   o   o   o  ...  o  |
  G |  o   o   o   o   o  ...  o  |  Bottom Half
- H |  o   o   o   o   o  ...  o  |  (rows F-J connected vertically)
+ H |  o   o   o   o   o  ...  o  |  (rows F-J shorted)
  I |  o   o   o   o   o  ...  o  |
  J |  o   o   o   o   o  ...  o  |
    +-----------------------------+
-   |  - Power Rail (Blue)        |
+   |  - Power Rail               |
    +-----------------------------+
 ```
 
 - Holes in the same column within each half are electrically connected
-- The center channel separates the two halves
 - ICs straddle the center channel with pins in rows E and F
-
----
-
-## Custom IC Definitions
-
-### Syntax
-
-```
-def <ic_name> (
-    <pin_name> -> <pin_type>,
-    <pin_name> -> <pin_type>,
-    ...
-)
-```
-
-### Pin Types
-
-| Type | Description |
-|------|-------------|
-| `input` | Input pin |
-| `output` | Output pin |
-| `gnd` | Ground connection |
-| `vcc` | Power supply |
-
-### Example
-
-```
-def MyGate (
-    in1 -> input,
-    in2 -> input,
-    out1 -> output,
-    gnd -> gnd,
-    vcc -> vcc
-)
-
-@comp G1 MyGate
-```
 
 ---
 
@@ -189,9 +294,7 @@ map (
 )
 ```
 
-### Pin Numbering Convention
-
-For DIP (Dual In-line Package) ICs, pins are numbered counter-clockwise starting from pin 1:
+### Pin Numbering for DIP ICs
 
 ```
         Notch
@@ -224,18 +327,24 @@ In CircuitSim's horizontal layout:
 | `7404` | Hex inverter | 14 |
 | `7408` | Quad 2-input AND gate | 14 |
 | `7410` | Triple 3-input NAND gate | 14 |
+| `7411` | Triple 3-input AND gate | 14 |
 | `7420` | Dual 4-input NAND gate | 14 |
+| `7421` | Dual 4-input AND gate | 14 |
+| `7427` | Triple 3-input NOR gate | 14 |
 | `7432` | Quad 2-input OR gate | 14 |
 | `7447` | BCD to 7-segment decoder | 16 |
 | `7474` | Dual D flip-flop | 14 |
+| `7476` | Dual JK flip-flop | 16 |
 | `7486` | Quad 2-input XOR gate | 14 |
 | `7490` | Decade counter | 14 |
 | `74138` | 3-to-8 line decoder | 16 |
 | `74139` | Dual 2-to-4 line decoder | 16 |
+| `74148` | 8-to-3 priority encoder | 16 |
 | `74151` | 8-to-1 multiplexer | 16 |
 | `74153` | Dual 4-to-1 multiplexer | 16 |
 | `74161` | 4-bit binary counter | 16 |
-| `74164` | 8-bit shift register | 14 |
+| `74164` | 8-bit shift register (SIPO) | 14 |
+| `74165` | 8-bit shift register (PISO) | 16 |
 | `74173` | 4-bit D register | 16 |
 | `74181` | 4-bit ALU | 24 |
 | `74245` | Octal bus transceiver | 20 |
@@ -246,16 +355,51 @@ In CircuitSim's horizontal layout:
 
 | Part Number | Description | Pins |
 |-------------|-------------|------|
-| `555` | Timer IC | 8 |
-| `NE555` | Timer IC (alternate) | 8 |
+| `555` / `NE555` | Timer IC | 8 |
 
 ### Operational Amplifiers
 
 | Part Number | Description | Pins |
 |-------------|-------------|------|
-| `741` | General purpose op-amp | 8 |
-| `LM741` | General purpose op-amp | 8 |
+| `741` / `LM741` | General purpose op-amp | 8 |
 | `LM358` | Dual op-amp | 8 |
+
+---
+
+## Custom IC Definitions
+
+### Syntax
+
+```
+def <ic_name> (
+    <pin_name> -> <pin_type>,
+    <pin_name> -> <pin_type>,
+    ...
+)
+```
+
+### Pin Types
+
+| Type | Description |
+|------|-------------|
+| `input` | Input pin |
+| `output` | Output pin |
+| `gnd` | Ground connection |
+| `vcc` | Power supply |
+
+### Example
+
+```
+def MyGate (
+    in1 -> input,
+    in2 -> input,
+    out1 -> output,
+    gnd -> gnd,
+    vcc -> vcc
+)
+
+@comp G1 MyGate
+```
 
 ---
 
@@ -265,68 +409,107 @@ Single-line comments start with `//`:
 
 ```
 // This is a comment
-@comp A1 7408  // Inline comment
+@AND A1 7408  // Inline comment
 ```
 
 ---
 
 ## Examples
 
-### Example 1: Simple AND Gate Circuit
+### Example 1: LED with Current Limiting Resistor
 
 ```
-// Two AND gates with outputs connected to breadboard
-@comp A1 7408
+@AND A1 7408
+@resistor R1 330
+@led D1 red
 @board B1 breadboard_830
 
 map (
-    (A1 pin 3 -> B1 pin 20)   // Gate 1 output
-    (A1 pin 6 -> B1 pin 25)   // Gate 2 output
+    (A1 pin 3 -> R1 pin 1)    // AND gate output to resistor
+    (R1 pin 2 -> D1 pin 1)    // Resistor to LED anode
 )
 ```
 
-### Example 2: Two-IC Logic Circuit
+### Example 2: Logic Gate Chain
 
 ```
-// AND gate feeding OR gate
-@comp AND1 7408
-@comp OR1 7432
+@AND A1 7408
+@OR O1 7432
+@NOT I1 7404
 @board B1 breadboard_830
 
 map (
-    (AND1 pin 3 -> OR1 pin 1)   // AND output to OR input
-    (AND1 pin 6 -> OR1 pin 2)   // Another AND output to OR
-    (OR1 pin 3 -> B1 pin 30)    // Final output
+    (A1 pin 3 -> O1 pin 1)    // AND output to OR input
+    (A1 pin 6 -> O1 pin 2)    // Another AND output
+    (O1 pin 3 -> I1 pin 1)    // OR output to inverter
 )
 ```
 
-### Example 3: 555 Timer Astable Mode
+### Example 3: Transistor Switch
 
 ```
-@comp T1 555
+@npn Q1 2N2222
+@resistor R1 1k
+@resistor R2 10k
+@led D1 green
 @board B1 breadboard_830
 
 map (
-    (T1 pin 3 -> B1 pin 40)    // Output
-    (T1 pin 2 -> T1 pin 6)     // Trigger to threshold (astable)
+    (R2 pin 2 -> Q1 pin 1)    // Base resistor to transistor
+    (Q1 pin 2 -> R1 pin 1)    // Collector to LED resistor
+    (R1 pin 2 -> D1 pin 1)    // Resistor to LED
 )
 ```
 
-### Example 4: Counter Circuit
+### Example 4: 8-to-1 Multiplexer
 
 ```
-@comp CNT1 74161
-@comp DEC1 7447
+@mux_8x1 M1 74151
+@AND A1 7408
 @board B1 breadboard_830
 
 map (
-    // Counter outputs to decoder inputs
-    (CNT1 pin 14 -> DEC1 pin 7)   // QA
-    (CNT1 pin 13 -> DEC1 pin 1)   // QB
-    (CNT1 pin 12 -> DEC1 pin 2)   // QC
-    (CNT1 pin 11 -> DEC1 pin 6)   // QD
+    (A1 pin 3 -> M1 pin 4)    // AND output to mux data input
+    (M1 pin 5 -> B1 pin 30)   // Mux output
 )
 ```
+
+### Example 5: Shift Register with LED Display
+
+```
+@shift_reg_8 SR1 74164
+@resistor R1 330
+@resistor R2 330
+@led D1 red
+@led D2 green
+@board B1 breadboard_830
+
+map (
+    (SR1 pin 3 -> R1 pin 1)   // Q0 output
+    (R1 pin 2 -> D1 pin 1)
+    (SR1 pin 4 -> R2 pin 1)   // Q1 output
+    (R2 pin 2 -> D2 pin 1)
+)
+```
+
+---
+
+## Canvas Controls
+
+### Mouse Controls
+
+| Action | Control |
+|--------|---------|
+| **Zoom** | Mouse wheel (centered on cursor) |
+| **Select component** | Left click on component |
+| **Drag component** | Click and drag |
+| **Drag board** | Click and drag on breadboard (moves all components) |
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Enter` | Compile code |
 
 ---
 
@@ -335,9 +518,9 @@ map (
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `Duplicate component declaration` | Same identifier used twice | Use unique identifiers |
-| `Unknown component type` | IC part number not recognized | Check spelling or define custom IC |
-| `Undefined component` | Reference to undeclared component | Declare component with `@comp` first |
-| `Invalid pin number` | Pin number exceeds IC's pin count | Check IC datasheet for valid pins |
+| `Unknown component type` | Component keyword not recognized | Check spelling or use `@comp` |
+| `Undefined component` | Reference to undeclared component | Declare component first |
+| `Invalid pin number` | Pin number exceeds component's pin count | Check component datasheet |
 | `Expected '(' after map` | Missing parenthesis | Add opening parenthesis |
 
 ---
@@ -362,5 +545,5 @@ circuitsim circuit.csim
 circuitsim --json-only circuit.csim
 
 # Read from stdin
-echo "@comp A1 7408" | circuitsim --json-only
+echo "@AND A1 7408" | circuitsim --json-only
 ```
