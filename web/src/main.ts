@@ -7,12 +7,14 @@ class App {
     private codeEditor: HTMLTextAreaElement;
     private errorPanel: HTMLDivElement;
     private statusEl: HTMLSpanElement;
+    private editorPanel: HTMLDivElement;
 
     constructor() {
         const canvas = document.getElementById('circuit-canvas') as HTMLCanvasElement;
         this.codeEditor = document.getElementById('code-editor') as HTMLTextAreaElement;
         this.errorPanel = document.getElementById('error-panel') as HTMLDivElement;
         this.statusEl = document.getElementById('status') as HTMLSpanElement;
+        this.editorPanel = document.getElementById('editor-panel') as HTMLDivElement;
 
         this.renderer = new CircuitRenderer(canvas);
         this.setupEventListeners();
@@ -24,6 +26,11 @@ class App {
     private setupEventListeners(): void {
         document.getElementById('compile-btn')?.addEventListener('click', () => this.compile());
         document.getElementById('clear-btn')?.addEventListener('click', () => this.clear());
+        
+        document.getElementById('editor-toggle')?.addEventListener('click', () => {
+            this.editorPanel.classList.toggle('collapsed');
+            setTimeout(() => this.renderer.resize(), 200);
+        });
         
         this.codeEditor.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'Enter') {

@@ -486,7 +486,8 @@ class IRGenerator {
         };
     }
 
-    private getPinPosition(componentId: string, pinNumber: number): Position {
+    // Get wire terminal position - connects to a free hole in the same column
+    private getWireTerminalPosition(componentId: string, pinNumber: number): Position {
         const pos = this.componentPositions.get(componentId);
         if (!pos) return { x: 0, y: 0 };
 
@@ -494,35 +495,30 @@ class IRGenerator {
         if (!symbol) return pos;
 
         if (symbol.kind === 'board') {
-            // Convert pin number to column/row
-            // For now, simple mapping: pins map to columns
             const col = ((pinNumber - 1) % this.NUM_COLS) + 1;
-            const row = pinNumber <= this.NUM_COLS ? 'E' : 'F';
+            const row = pinNumber <= this.NUM_COLS ? 'D' : 'G'; // Use adjacent rows
             return this.getBoardHolePosition(componentId, col, row);
         }
 
-        // IC pin layout - horizontal orientation
-        // Top row: pins 1 to N/2 (left to right)
-        // Bottom row: pins N to N/2+1 (left to right, i.e., N at left, N/2+1 at right)
+        // For IC pins, wire connects to adjacent row (not on the IC leg)
         const pinCount = BUILTIN_ICS[symbol.type] || 14;
         const pinsPerSide = pinCount / 2;
         
-        const holesStartX = pos.x + 1; // Offset to align with hole grid
+        const holesStartX = pos.x + 1;
         
         if (pinNumber <= pinsPerSide) {
-            // Top row - pins go into row E of breadboard
+            // Top pin (row E) - wire connects to row D
             const pinIndex = pinNumber - 1;
             return {
                 x: holesStartX + pinIndex * this.HOLE_SPACING,
-                y: pos.y - 1.5 // Above IC body (into row E)
+                y: pos.y - 1.5 - this.HOLE_SPACING // Row D (one above E)
             };
         } else {
-            // Bottom row - pins go into row F of breadboard
-            // Pin N is at left, pin N/2+1 is at right
+            // Bottom pin (row F) - wire connects to row G
             const pinIndex = pinCount - pinNumber;
             return {
                 x: holesStartX + pinIndex * this.HOLE_SPACING,
-                y: pos.y + 8.5 // Below IC body (into row F)
+                y: pos.y + 8.5 + this.HOLE_SPACING // Row G (one below F)
             };
         }
     }
@@ -538,11 +534,12 @@ class IRGenerator {
 
         for (let i = 0; i < connections.length; i++) {
             const conn = connections[i];
-            const fromPos = this.getPinPosition(conn.source.componentId, conn.source.pinNumber);
+            // Use wire terminal positions (adjacent free holes) instead of pin positions
+            const fromPos = this.getWireTerminalPosition(conn.source.componentId, conn.source.pinNumber);
             const color = colors[i % colors.length];
 
             for (const dest of conn.destinations) {
-                const toPos = this.getPinPosition(dest.componentId, dest.pinNumber);
+                const toPos = this.getWireTerminalPosition(dest.componentId, dest.pinNumber);
                 const waypoints = this.routeWire(fromPos, toPos, usedYChannels, usedXChannels, CHANNEL_SPACING);
                 
                 wires.push({

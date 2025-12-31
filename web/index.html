@@ -25,8 +25,8 @@
             width: 100vw;
         }
         .editor-panel {
-            width: 350px;
-            min-width: 280px;
+            width: 320px;
+            min-width: 200px;
             max-width: 500px;
             background: #fff;
             border-right: 1px solid #ddd;
@@ -35,17 +35,43 @@
             flex-shrink: 0;
         }
         .editor-header {
-            padding: 10px 14px;
+            padding: 8px 12px;
             border-bottom: 1px solid #ddd;
             font-weight: 600;
-            font-size: 13px;
+            font-size: 12px;
             background: #fafafa;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .editor-header:hover {
+            background: #f0f0f0;
+        }
+        .collapse-icon {
+            font-size: 10px;
+            transition: transform 0.2s;
+        }
+        .editor-panel.collapsed .collapse-icon {
+            transform: rotate(-90deg);
+        }
+        .editor-panel.collapsed {
+            width: 40px;
+            min-width: 40px;
+        }
+        .editor-panel.collapsed .editor-header span:first-child {
+            display: none;
+        }
+        .editor-panel.collapsed .editor-content {
+            display: none;
         }
         .editor-content {
             flex: 1;
             display: flex;
             flex-direction: column;
             min-height: 0;
+            overflow: hidden;
         }
         #code-editor {
             flex: 1;
@@ -94,13 +120,13 @@
             overflow: hidden;
         }
         .canvas-header {
-            padding: 10px 14px;
+            padding: 8px 12px;
             border-bottom: 1px solid #ddd;
             background: #fff;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 13px;
+            font-size: 12px;
             flex-shrink: 0;
         }
         .canvas-container {
@@ -115,11 +141,11 @@
         .error-panel {
             background: #fef2f2;
             border-top: 1px solid #fca5a5;
-            padding: 10px 12px;
-            font-size: 12px;
+            padding: 8px 10px;
+            font-size: 11px;
             font-family: 'SF Mono', 'Consolas', monospace;
             color: #b91c1c;
-            max-height: 120px;
+            max-height: 100px;
             overflow-y: auto;
         }
         .error-panel.hidden {
@@ -136,21 +162,32 @@
             .editor-panel {
                 width: 100%;
                 max-width: none;
-                height: 40vh;
-                min-height: 200px;
+                height: auto;
+                max-height: 45vh;
                 border-right: none;
                 border-bottom: 1px solid #ddd;
             }
+            .editor-panel.collapsed {
+                width: 100%;
+                height: auto;
+            }
+            .editor-content {
+                max-height: 35vh;
+            }
             .canvas-panel {
-                height: 60vh;
+                flex: 1;
+                min-height: 50vh;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="editor-panel">
-            <div class="editor-header">Circuit Code</div>
+        <div class="editor-panel" id="editor-panel">
+            <div class="editor-header" id="editor-toggle">
+                <span>Circuit Code</span>
+                <span class="collapse-icon">&#9660;</span>
+            </div>
             <div class="editor-content">
                 <textarea id="code-editor" spellcheck="false">@comp A1 7408
 @comp O1 7432
@@ -161,12 +198,12 @@ map (
     (A1 pin 6 -> O1 pin 2)
     (O1 pin 3 -> A1 pin 4)
 )</textarea>
+                <div class="toolbar">
+                    <button class="btn btn-primary" id="compile-btn">Compile</button>
+                    <button class="btn" id="clear-btn">Clear</button>
+                </div>
+                <div class="error-panel hidden" id="error-panel"></div>
             </div>
-            <div class="toolbar">
-                <button class="btn btn-primary" id="compile-btn">Compile</button>
-                <button class="btn" id="clear-btn">Clear</button>
-            </div>
-            <div class="error-panel hidden" id="error-panel"></div>
         </div>
         <div class="canvas-panel">
             <div class="canvas-header">

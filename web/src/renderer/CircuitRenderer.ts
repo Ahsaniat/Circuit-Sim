@@ -89,21 +89,22 @@ export class CircuitRenderer {
         
         const numCols = 63;
         const numRowsPerHalf = 5;
-        const railWidth = 20;
-        const channelHeight = 12;
-        const holeMargin = 15;
+        const railHeight = 24;
+        const channelHeight = 14;
+        const holeMargin = 18;
+        // const railHoleRows = 2;
         
         const w = holeMargin * 2 + numCols * HOLE_SPACING;
-        const h = railWidth + holeMargin + numRowsPerHalf * HOLE_SPACING + channelHeight + 
-                  numRowsPerHalf * HOLE_SPACING + holeMargin + railWidth;
+        const h = railHeight + holeMargin + numRowsPerHalf * HOLE_SPACING + channelHeight + 
+                  numRowsPerHalf * HOLE_SPACING + holeMargin + railHeight;
 
         const geo: BoardGeometry = {
             x, y, width: w, height: h,
             holesStartX: x + holeMargin,
-            holesStartY: y + railWidth + holeMargin,
-            topHalfY: y + railWidth + holeMargin,
-            bottomHalfY: y + railWidth + holeMargin + numRowsPerHalf * HOLE_SPACING + channelHeight,
-            channelY: y + railWidth + holeMargin + numRowsPerHalf * HOLE_SPACING,
+            holesStartY: y + railHeight + holeMargin,
+            topHalfY: y + railHeight + holeMargin,
+            bottomHalfY: y + railHeight + holeMargin + numRowsPerHalf * HOLE_SPACING + channelHeight,
+            channelY: y + railHeight + holeMargin + numRowsPerHalf * HOLE_SPACING,
             numCols
         };
         this.boardGeometry.set(board.id, geo);
@@ -116,20 +117,91 @@ export class CircuitRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Top power rail
-        this.ctx.fillStyle = '#d44';
-        this.ctx.fillRect(x + 8, y + 4, w - 16, railWidth - 8);
-        this.ctx.fillStyle = '#44d';
-        this.ctx.fillRect(x + 8, y + h - railWidth + 4, w - 16, railWidth - 8);
+        // Top power rail area
+        const topRailY = y + 4;
+        this.ctx.fillStyle = '#f0ebe6';
+        this.ctx.fillRect(x + 6, topRailY, w - 12, railHeight - 4);
+        
+        // Top rail: + (red) and - (blue) lines
+        this.ctx.strokeStyle = '#c44';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + 12, topRailY + 6);
+        this.ctx.lineTo(x + w - 12, topRailY + 6);
+        this.ctx.stroke();
+        
+        this.ctx.strokeStyle = '#44c';
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + 12, topRailY + railHeight - 10);
+        this.ctx.lineTo(x + w - 12, topRailY + railHeight - 10);
+        this.ctx.stroke();
+        
+        // Top rail holes (+ row and - row)
+        this.ctx.fillStyle = '#222';
+        for (let col = 0; col < numCols; col++) {
+            const hx = geo.holesStartX + col * HOLE_SPACING;
+            // + row
+            this.ctx.beginPath();
+            this.ctx.arc(hx, topRailY + 6, 1.5, 0, Math.PI * 2);
+            this.ctx.fill();
+            // - row
+            this.ctx.beginPath();
+            this.ctx.arc(hx, topRailY + railHeight - 10, 1.5, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        
+        // + and - labels for top rail
+        this.ctx.fillStyle = '#c44';
+        this.ctx.font = 'bold 10px sans-serif';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText('+', x + 4, topRailY + 9);
+        this.ctx.fillStyle = '#44c';
+        this.ctx.fillText('-', x + 4, topRailY + railHeight - 7);
+
+        // Bottom power rail area
+        const bottomRailY = y + h - railHeight;
+        this.ctx.fillStyle = '#f0ebe6';
+        this.ctx.fillRect(x + 6, bottomRailY, w - 12, railHeight - 4);
+        
+        // Bottom rail: + and - lines
+        this.ctx.strokeStyle = '#c44';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + 12, bottomRailY + 6);
+        this.ctx.lineTo(x + w - 12, bottomRailY + 6);
+        this.ctx.stroke();
+        
+        this.ctx.strokeStyle = '#44c';
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + 12, bottomRailY + railHeight - 10);
+        this.ctx.lineTo(x + w - 12, bottomRailY + railHeight - 10);
+        this.ctx.stroke();
+        
+        // Bottom rail holes
+        this.ctx.fillStyle = '#222';
+        for (let col = 0; col < numCols; col++) {
+            const hx = geo.holesStartX + col * HOLE_SPACING;
+            this.ctx.beginPath();
+            this.ctx.arc(hx, bottomRailY + 6, 1.5, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.beginPath();
+            this.ctx.arc(hx, bottomRailY + railHeight - 10, 1.5, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        
+        // + and - labels for bottom rail
+        this.ctx.fillStyle = '#c44';
+        this.ctx.font = 'bold 10px sans-serif';
+        this.ctx.fillText('+', x + 4, bottomRailY + 9);
+        this.ctx.fillStyle = '#44c';
+        this.ctx.fillText('-', x + 4, bottomRailY + railHeight - 7);
 
         // Center channel
         this.ctx.fillStyle = '#c8c4bf';
         this.ctx.fillRect(x + 8, geo.channelY, w - 16, channelHeight);
 
-        // Draw holes
+        // Draw main holes - Top half (rows A-E)
         this.ctx.fillStyle = '#222';
-        
-        // Top half (rows A-E)
         for (let row = 0; row < numRowsPerHalf; row++) {
             for (let col = 0; col < numCols; col++) {
                 const hx = geo.holesStartX + col * HOLE_SPACING;
