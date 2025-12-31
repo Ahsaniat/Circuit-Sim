@@ -67,10 +67,13 @@ export class CircuitRenderer {
         // Convert screen coordinates to canvas world coordinates
         const canvasX = (e.clientX - rect.left) * dpr;
         const canvasY = (e.clientY - rect.top) * dpr;
-        // Account for pan and padding
+        // Account for pan, padding, zoom, and BASE_SCALE to get base units
+        // Screen -> canvas: already done above
+        // canvas -> world (after pan/padding): (canvasX/dpr - PADDING - panX) / zoom
+        // world -> base units: / BASE_SCALE
         return { 
-            x: (canvasX / dpr - PADDING - this.panX) / this.zoom, 
-            y: (canvasY / dpr - PADDING - this.panY) / this.zoom
+            x: (canvasX / dpr - PADDING - this.panX) / this.zoom / BASE_SCALE, 
+            y: (canvasY / dpr - PADDING - this.panY) / this.zoom / BASE_SCALE
         };
     }
     

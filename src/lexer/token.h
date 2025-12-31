@@ -8,11 +8,51 @@ namespace circuitsim {
 
 enum class TokenType {
     // Keywords
-    COMP,       // @comp
+    COMP,       // @comp (generic component)
     BOARD,      // @board
     DEF,        // def
     MAP,        // map
     PIN,        // pin
+    
+    // Component-specific keywords (all map to component declarations)
+    RESISTOR,       // @resistor
+    CAPACITOR,      // @capacitor
+    INDUCTOR,       // @inductor
+    POTENTIOMETER,  // @potentiometer
+    DIODE,          // @diode
+    ZENER_DIODE,    // @zener_diode
+    SCHOTTKY_DIODE, // @schottky_diode
+    LED,            // @led
+    IR_LED,         // @ir_led
+    PHOTODIODE,     // @photodiode
+    LDR,            // @ldr
+    NPN,            // @npn (BJT)
+    PNP,            // @pnp (BJT)
+    NMOS,           // @nmos (MOSFET)
+    PMOS,           // @pmos (MOSFET)
+    AND_GATE,       // @AND
+    OR_GATE,        // @OR
+    XOR_GATE,       // @XOR
+    NAND_GATE,      // @NAND
+    NOR_GATE,       // @NOR
+    NOT_GATE,       // @NOT
+    AND3_GATE,      // @AND3
+    NAND3_GATE,     // @NAND3
+    NOR3_GATE,      // @NOR3
+    AND4_GATE,      // @AND4
+    NAND4_GATE,     // @NAND4
+    MUX_4X1,        // @mux_4x1
+    MUX_8X1,        // @mux_8x1
+    DECODER_3TO8,   // @decoder_3to8
+    DECODER_2TO4,   // @decoder_2to4
+    ENCODER_8TO3,   // @encoder_8to3
+    SHIFT_REG_8,    // @shift_reg_8
+    SHIFT_REG_8_PAR,// @shift_reg_8_parallel
+    D_FLIPFLOP,     // @d_flipflop
+    JK_FLIPFLOP,    // @jk_flipflop
+    LATCH_8,        // @latch_8
+    COUNTER_4BIT,   // @counter_4bit
+    COUNTER_DECADE, // @counter_decade
 
     // Types
     TYPE_INPUT,
@@ -65,6 +105,44 @@ inline const char* tokenTypeToString(TokenType type) {
         case TokenType::DEF: return "DEF";
         case TokenType::MAP: return "MAP";
         case TokenType::PIN: return "PIN";
+        case TokenType::RESISTOR: return "RESISTOR";
+        case TokenType::CAPACITOR: return "CAPACITOR";
+        case TokenType::INDUCTOR: return "INDUCTOR";
+        case TokenType::POTENTIOMETER: return "POTENTIOMETER";
+        case TokenType::DIODE: return "DIODE";
+        case TokenType::ZENER_DIODE: return "ZENER_DIODE";
+        case TokenType::SCHOTTKY_DIODE: return "SCHOTTKY_DIODE";
+        case TokenType::LED: return "LED";
+        case TokenType::IR_LED: return "IR_LED";
+        case TokenType::PHOTODIODE: return "PHOTODIODE";
+        case TokenType::LDR: return "LDR";
+        case TokenType::NPN: return "NPN";
+        case TokenType::PNP: return "PNP";
+        case TokenType::NMOS: return "NMOS";
+        case TokenType::PMOS: return "PMOS";
+        case TokenType::AND_GATE: return "AND_GATE";
+        case TokenType::OR_GATE: return "OR_GATE";
+        case TokenType::XOR_GATE: return "XOR_GATE";
+        case TokenType::NAND_GATE: return "NAND_GATE";
+        case TokenType::NOR_GATE: return "NOR_GATE";
+        case TokenType::NOT_GATE: return "NOT_GATE";
+        case TokenType::AND3_GATE: return "AND3_GATE";
+        case TokenType::NAND3_GATE: return "NAND3_GATE";
+        case TokenType::NOR3_GATE: return "NOR3_GATE";
+        case TokenType::AND4_GATE: return "AND4_GATE";
+        case TokenType::NAND4_GATE: return "NAND4_GATE";
+        case TokenType::MUX_4X1: return "MUX_4X1";
+        case TokenType::MUX_8X1: return "MUX_8X1";
+        case TokenType::DECODER_3TO8: return "DECODER_3TO8";
+        case TokenType::DECODER_2TO4: return "DECODER_2TO4";
+        case TokenType::ENCODER_8TO3: return "ENCODER_8TO3";
+        case TokenType::SHIFT_REG_8: return "SHIFT_REG_8";
+        case TokenType::SHIFT_REG_8_PAR: return "SHIFT_REG_8_PAR";
+        case TokenType::D_FLIPFLOP: return "D_FLIPFLOP";
+        case TokenType::JK_FLIPFLOP: return "JK_FLIPFLOP";
+        case TokenType::LATCH_8: return "LATCH_8";
+        case TokenType::COUNTER_4BIT: return "COUNTER_4BIT";
+        case TokenType::COUNTER_DECADE: return "COUNTER_DECADE";
         case TokenType::TYPE_INPUT: return "TYPE_INPUT";
         case TokenType::TYPE_OUTPUT: return "TYPE_OUTPUT";
         case TokenType::TYPE_GND: return "TYPE_GND";

@@ -69,6 +69,8 @@ void Parser::synchronize() {
             case TokenType::MAP:
                 return;
             default:
+                // Also sync on any component keyword
+                if (isComponentKeyword(peek().type)) return;
                 advance();
         }
     }
@@ -76,6 +78,104 @@ void Parser::synchronize() {
 
 void Parser::reportError(const std::string& message) {
     errorReporter_.report("parser", message, peek().location);
+}
+
+bool Parser::isComponentKeyword(TokenType type) const {
+    switch (type) {
+        case TokenType::RESISTOR:
+        case TokenType::CAPACITOR:
+        case TokenType::INDUCTOR:
+        case TokenType::POTENTIOMETER:
+        case TokenType::DIODE:
+        case TokenType::ZENER_DIODE:
+        case TokenType::SCHOTTKY_DIODE:
+        case TokenType::LED:
+        case TokenType::IR_LED:
+        case TokenType::PHOTODIODE:
+        case TokenType::LDR:
+        case TokenType::NPN:
+        case TokenType::PNP:
+        case TokenType::NMOS:
+        case TokenType::PMOS:
+        case TokenType::AND_GATE:
+        case TokenType::OR_GATE:
+        case TokenType::XOR_GATE:
+        case TokenType::NAND_GATE:
+        case TokenType::NOR_GATE:
+        case TokenType::NOT_GATE:
+        case TokenType::AND3_GATE:
+        case TokenType::NAND3_GATE:
+        case TokenType::NOR3_GATE:
+        case TokenType::AND4_GATE:
+        case TokenType::NAND4_GATE:
+        case TokenType::MUX_4X1:
+        case TokenType::MUX_8X1:
+        case TokenType::DECODER_3TO8:
+        case TokenType::DECODER_2TO4:
+        case TokenType::ENCODER_8TO3:
+        case TokenType::SHIFT_REG_8:
+        case TokenType::SHIFT_REG_8_PAR:
+        case TokenType::D_FLIPFLOP:
+        case TokenType::JK_FLIPFLOP:
+        case TokenType::LATCH_8:
+        case TokenType::COUNTER_4BIT:
+        case TokenType::COUNTER_DECADE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool Parser::matchComponentKeyword() {
+    if (isComponentKeyword(peek().type)) {
+        advance();
+        return true;
+    }
+    return false;
+}
+
+std::string Parser::getComponentTypeFromKeyword(TokenType type) const {
+    switch (type) {
+        case TokenType::RESISTOR: return "resistor";
+        case TokenType::CAPACITOR: return "capacitor";
+        case TokenType::INDUCTOR: return "inductor";
+        case TokenType::POTENTIOMETER: return "potentiometer";
+        case TokenType::DIODE: return "diode";
+        case TokenType::ZENER_DIODE: return "zener_diode";
+        case TokenType::SCHOTTKY_DIODE: return "schottky_diode";
+        case TokenType::LED: return "led";
+        case TokenType::IR_LED: return "ir_led";
+        case TokenType::PHOTODIODE: return "photodiode";
+        case TokenType::LDR: return "ldr";
+        case TokenType::NPN: return "npn";
+        case TokenType::PNP: return "pnp";
+        case TokenType::NMOS: return "nmos";
+        case TokenType::PMOS: return "pmos";
+        case TokenType::AND_GATE: return "and_gate";
+        case TokenType::OR_GATE: return "or_gate";
+        case TokenType::XOR_GATE: return "xor_gate";
+        case TokenType::NAND_GATE: return "nand_gate";
+        case TokenType::NOR_GATE: return "nor_gate";
+        case TokenType::NOT_GATE: return "not_gate";
+        case TokenType::AND3_GATE: return "and3_gate";
+        case TokenType::NAND3_GATE: return "nand3_gate";
+        case TokenType::NOR3_GATE: return "nor3_gate";
+        case TokenType::AND4_GATE: return "and4_gate";
+        case TokenType::NAND4_GATE: return "nand4_gate";
+        case TokenType::MUX_4X1: return "mux_4x1";
+        case TokenType::MUX_8X1: return "mux_8x1";
+        case TokenType::DECODER_3TO8: return "decoder_3to8";
+        case TokenType::DECODER_2TO4: return "decoder_2to4";
+        case TokenType::ENCODER_8TO3: return "encoder_8to3";
+        case TokenType::SHIFT_REG_8: return "shift_reg_8";
+        case TokenType::SHIFT_REG_8_PAR: return "shift_reg_8_parallel";
+        case TokenType::D_FLIPFLOP: return "d_flipflop";
+        case TokenType::JK_FLIPFLOP: return "jk_flipflop";
+        case TokenType::LATCH_8: return "latch_8";
+        case TokenType::COUNTER_4BIT: return "counter_4bit";
+        case TokenType::COUNTER_DECADE: return "counter_decade";
+        default: return "unknown";
+    }
 }
 
 std::unique_ptr<ProgramNode> Parser::parse() {
@@ -88,6 +188,9 @@ std::unique_ptr<ProgramNode> Parser::parse() {
             if (match(TokenType::COMP)) {
                 auto comp = parseCompDecl();
                 if (comp) program->components.push_back(std::move(comp));
+            } else if (matchComponentKeyword()) {
+                auto comp = parseTypedCompDecl();
+                if (comp) program->components.push_back(std::move(comp));
             } else if (match(TokenType::BOARD)) {
                 auto board = parseBoardDecl();
                 if (board) program->boards.push_back(std::move(board));
@@ -97,7 +200,7 @@ std::unique_ptr<ProgramNode> Parser::parse() {
             } else if (match(TokenType::MAP)) {
                 program->mapBlock = parseMapBlock();
             } else {
-                reportError("Expected '@comp', '@board', 'def', or 'map'");
+                reportError("Expected component declaration, '@board', 'def', or 'map'");
                 synchronize();
             }
         } catch (...) {
@@ -127,6 +230,26 @@ std::unique_ptr<CompDeclNode> Parser::parseCompDecl() {
     }
     
     return std::make_unique<CompDeclNode>(idToken.lexeme, typeToken.lexeme, loc);
+}
+
+// @resistor R1 10k, @AND A1 7408, etc.
+std::unique_ptr<CompDeclNode> Parser::parseTypedCompDecl() {
+    SourceLocation loc = previous().location;
+    TokenType componentKeyword = previous().type;
+    std::string baseType = getComponentTypeFromKeyword(componentKeyword);
+    
+    Token idToken = consume(TokenType::IDENTIFIER, "Expected component identifier");
+    if (idToken.type == TokenType::UNKNOWN) return nullptr;
+    
+    // Value/part number is optional for typed components
+    std::string componentType = baseType;
+    if (check(TokenType::COMPONENT_TYPE) || check(TokenType::IDENTIFIER) || check(TokenType::NUMBER)) {
+        Token valueToken = advance();
+        // Combine base type with value, e.g., "resistor:10k" or "and_gate:7408"
+        componentType = baseType + ":" + valueToken.lexeme;
+    }
+    
+    return std::make_unique<CompDeclNode>(idToken.lexeme, componentType, loc);
 }
 
 // @board B1 breadboard_830

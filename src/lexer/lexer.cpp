@@ -135,16 +135,160 @@ Token Lexer::scanToken() {
 Token Lexer::scanAtKeyword() {
     size_t start = current_;
     
-    while (!isAtEnd() && isAlpha(peek())) {
+    // Allow alphanumeric and underscore in @ keywords
+    while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
         advance();
     }
     
     std::string keyword = source_.substr(start, current_ - start);
     
+    // Generic component
     if (keyword == "comp") {
         return makeToken(TokenType::COMP, "@comp");
-    } else if (keyword == "board") {
+    }
+    // Board
+    if (keyword == "board") {
         return makeToken(TokenType::BOARD, "@board");
+    }
+    
+    // Passive components
+    if (keyword == "resistor") {
+        return makeToken(TokenType::RESISTOR, "@resistor");
+    }
+    if (keyword == "capacitor") {
+        return makeToken(TokenType::CAPACITOR, "@capacitor");
+    }
+    if (keyword == "inductor") {
+        return makeToken(TokenType::INDUCTOR, "@inductor");
+    }
+    if (keyword == "potentiometer") {
+        return makeToken(TokenType::POTENTIOMETER, "@potentiometer");
+    }
+    
+    // Diodes
+    if (keyword == "diode") {
+        return makeToken(TokenType::DIODE, "@diode");
+    }
+    if (keyword == "zener_diode") {
+        return makeToken(TokenType::ZENER_DIODE, "@zener_diode");
+    }
+    if (keyword == "schottky_diode") {
+        return makeToken(TokenType::SCHOTTKY_DIODE, "@schottky_diode");
+    }
+    
+    // LEDs and optical
+    if (keyword == "led") {
+        return makeToken(TokenType::LED, "@led");
+    }
+    if (keyword == "ir_led") {
+        return makeToken(TokenType::IR_LED, "@ir_led");
+    }
+    if (keyword == "photodiode") {
+        return makeToken(TokenType::PHOTODIODE, "@photodiode");
+    }
+    if (keyword == "ldr") {
+        return makeToken(TokenType::LDR, "@ldr");
+    }
+    
+    // Transistors - BJT
+    if (keyword == "npn") {
+        return makeToken(TokenType::NPN, "@npn");
+    }
+    if (keyword == "pnp") {
+        return makeToken(TokenType::PNP, "@pnp");
+    }
+    
+    // Transistors - MOSFET
+    if (keyword == "nmos") {
+        return makeToken(TokenType::NMOS, "@nmos");
+    }
+    if (keyword == "pmos") {
+        return makeToken(TokenType::PMOS, "@pmos");
+    }
+    
+    // Logic gates - 2 input
+    if (keyword == "AND") {
+        return makeToken(TokenType::AND_GATE, "@AND");
+    }
+    if (keyword == "OR") {
+        return makeToken(TokenType::OR_GATE, "@OR");
+    }
+    if (keyword == "XOR") {
+        return makeToken(TokenType::XOR_GATE, "@XOR");
+    }
+    if (keyword == "NAND") {
+        return makeToken(TokenType::NAND_GATE, "@NAND");
+    }
+    if (keyword == "NOR") {
+        return makeToken(TokenType::NOR_GATE, "@NOR");
+    }
+    if (keyword == "NOT") {
+        return makeToken(TokenType::NOT_GATE, "@NOT");
+    }
+    
+    // Logic gates - 3 input
+    if (keyword == "AND3") {
+        return makeToken(TokenType::AND3_GATE, "@AND3");
+    }
+    if (keyword == "NAND3") {
+        return makeToken(TokenType::NAND3_GATE, "@NAND3");
+    }
+    if (keyword == "NOR3") {
+        return makeToken(TokenType::NOR3_GATE, "@NOR3");
+    }
+    
+    // Logic gates - 4 input
+    if (keyword == "AND4") {
+        return makeToken(TokenType::AND4_GATE, "@AND4");
+    }
+    if (keyword == "NAND4") {
+        return makeToken(TokenType::NAND4_GATE, "@NAND4");
+    }
+    
+    // Multiplexers
+    if (keyword == "mux_4x1") {
+        return makeToken(TokenType::MUX_4X1, "@mux_4x1");
+    }
+    if (keyword == "mux_8x1") {
+        return makeToken(TokenType::MUX_8X1, "@mux_8x1");
+    }
+    
+    // Decoders/Encoders
+    if (keyword == "decoder_3to8") {
+        return makeToken(TokenType::DECODER_3TO8, "@decoder_3to8");
+    }
+    if (keyword == "decoder_2to4") {
+        return makeToken(TokenType::DECODER_2TO4, "@decoder_2to4");
+    }
+    if (keyword == "encoder_8to3") {
+        return makeToken(TokenType::ENCODER_8TO3, "@encoder_8to3");
+    }
+    
+    // Shift registers
+    if (keyword == "shift_reg_8") {
+        return makeToken(TokenType::SHIFT_REG_8, "@shift_reg_8");
+    }
+    if (keyword == "shift_reg_8_parallel") {
+        return makeToken(TokenType::SHIFT_REG_8_PAR, "@shift_reg_8_parallel");
+    }
+    
+    // Flip-flops
+    if (keyword == "d_flipflop") {
+        return makeToken(TokenType::D_FLIPFLOP, "@d_flipflop");
+    }
+    if (keyword == "jk_flipflop") {
+        return makeToken(TokenType::JK_FLIPFLOP, "@jk_flipflop");
+    }
+    if (keyword == "latch_8") {
+        return makeToken(TokenType::LATCH_8, "@latch_8");
+    }
+    
+    // Counters
+    if (keyword == "counter_4bit") {
+        return makeToken(TokenType::COUNTER_4BIT, "@counter_4bit");
+    }
+    if (keyword == "counter_decade") {
+        return makeToken(TokenType::COUNTER_DECADE, "@counter_decade");
     }
     
     reportError("Unknown directive '@" + keyword + "'");
@@ -184,7 +328,22 @@ Token Lexer::scanNumber() {
     size_t start = current_;
     tokenStartColumn_ = column_;
     
+    // Scan digits
     while (!isAtEnd() && isDigit(peek())) {
+        advance();
+    }
+    
+    // Allow decimal point followed by more digits
+    if (!isAtEnd() && peek() == '.' && current_ + 1 < source_.size() && isDigit(source_[current_ + 1])) {
+        advance(); // consume '.'
+        while (!isAtEnd() && isDigit(peek())) {
+            advance();
+        }
+    }
+    
+    // Allow alphanumeric suffix for component part numbers (e.g., 2N2222, 10k, 100uF)
+    // This handles cases like: 10k, 4.7k, 2N2222, 100uF, BC547
+    while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '%')) {
         advance();
     }
     

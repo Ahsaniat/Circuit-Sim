@@ -25,6 +25,10 @@ void IRGenerator::initLayouts() {
         };
     };
     
+    // Small passive components (2-pin)
+    icLayouts_["2"] = {2, 2.0f, 5.0f, PIN_SPACING};  // Resistors, LEDs, etc.
+    icLayouts_["3"] = {3, 3.0f, 5.0f, PIN_SPACING};  // Transistors, potentiometers
+    
     icLayouts_["8"] = makeDIP(8);
     icLayouts_["14"] = makeDIP(14);
     icLayouts_["16"] = makeDIP(16);
@@ -38,29 +42,74 @@ void IRGenerator::initLayouts() {
 }
 
 ICLayout IRGenerator::getICLayout(const std::string& type) {
+    // Parse component type - may be "baseType:value" format
+    std::string baseType = type;
+    std::string value;
+    size_t colonPos = type.find(':');
+    if (colonPos != std::string::npos) {
+        baseType = type.substr(0, colonPos);
+        value = type.substr(colonPos + 1);
+    }
+    
     // Get pin count from builtin or custom IC
     int pinCount = 14; // default
     
     // Check symbol table for custom IC
-    auto ic = symbolTable_.lookupICTemplate(type);
+    auto ic = symbolTable_.lookupICTemplate(baseType);
     if (ic) {
         pinCount = ic->pinCount;
     } else {
-        // Known IC types
+        // Known IC types and component types with pin counts
         static const std::unordered_map<std::string, int> knownICs = {
+            // Standard 74xx ICs
             {"7400", 14}, {"7402", 14}, {"7404", 14}, {"7408", 14},
-            {"7410", 14}, {"7420", 14}, {"7432", 14}, {"7486", 14},
-            {"7447", 16}, {"7474", 14}, {"7490", 14},
-            {"74138", 16}, {"74139", 16}, {"74151", 16}, {"74153", 16},
-            {"74161", 16}, {"74164", 14}, {"74173", 16}, {"74181", 24},
+            {"7410", 14}, {"7411", 14}, {"7420", 14}, {"7421", 14},
+            {"7427", 14}, {"7432", 14}, {"7474", 14}, {"7476", 16},
+            {"7486", 14}, {"7490", 14},
+            {"7447", 16}, 
+            {"74138", 16}, {"74139", 16}, {"74148", 16},
+            {"74151", 16}, {"74153", 16},
+            {"74161", 16}, {"74164", 14}, {"74165", 16},
+            {"74173", 16}, {"74181", 24},
             {"74245", 20}, {"74373", 20}, {"74374", 20},
             {"555", 8}, {"NE555", 8},
-            {"741", 8}, {"LM741", 8}, {"LM358", 8}
+            {"741", 8}, {"LM741", 8}, {"LM358", 8},
+            
+            // Component types from keyword syntax
+            {"resistor", 2}, {"capacitor", 2}, {"inductor", 2},
+            {"potentiometer", 3},
+            {"diode", 2}, {"zener_diode", 2}, {"schottky_diode", 2},
+            {"led", 2}, {"ir_led", 2}, {"photodiode", 2}, {"ldr", 2},
+            {"npn", 3}, {"pnp", 3}, {"nmos", 3}, {"pmos", 3},
+            
+            // Logic gates (default pin counts)
+            {"and_gate", 14}, {"or_gate", 14}, {"xor_gate", 14},
+            {"nand_gate", 14}, {"nor_gate", 14}, {"not_gate", 14},
+            {"and3_gate", 14}, {"nand3_gate", 14}, {"nor3_gate", 14},
+            {"and4_gate", 14}, {"nand4_gate", 14},
+            
+            // Multiplexers, decoders, etc.
+            {"mux_4x1", 16}, {"mux_8x1", 16},
+            {"decoder_3to8", 16}, {"decoder_2to4", 16}, {"encoder_8to3", 16},
+            {"shift_reg_8", 14}, {"shift_reg_8_parallel", 16},
+            {"d_flipflop", 14}, {"jk_flipflop", 16}, {"latch_8", 20},
+            {"counter_4bit", 16}, {"counter_decade", 14}
         };
         
-        auto it = knownICs.find(type);
-        if (it != knownICs.end()) {
-            pinCount = it->second;
+        // First try value (e.g., 7408 in "and_gate:7408")
+        if (!value.empty()) {
+            auto it = knownICs.find(value);
+            if (it != knownICs.end()) {
+                pinCount = it->second;
+            }
+        }
+        
+        // If not found in value, try base type
+        if (pinCount == 14 || value.empty()) {
+            auto it = knownICs.find(baseType);
+            if (it != knownICs.end()) {
+                pinCount = it->second;
+            }
         }
     }
     
@@ -71,7 +120,7 @@ ICLayout IRGenerator::getICLayout(const std::string& type) {
     }
     
     // Generate layout for unknown pin count
-    int pinsPerSide = pinCount / 2;
+    int pinsPerSide = std::max(1, pinCount / 2);
     return {pinCount, DIP_WIDTH, pinsPerSide * PIN_SPACING, PIN_SPACING};
 }
 

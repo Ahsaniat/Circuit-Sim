@@ -30,11 +30,17 @@ private:
     bool match(std::initializer_list<TokenType> types);
     Token consume(TokenType type, const std::string& message);
     
+    // Component keyword detection
+    bool isComponentKeyword(TokenType type) const;
+    bool matchComponentKeyword();
+    std::string getComponentTypeFromKeyword(TokenType type) const;
+    
     void skipNewlines();
     void synchronize();
     
     // Parsing methods
     std::unique_ptr<CompDeclNode> parseCompDecl();
+    std::unique_ptr<CompDeclNode> parseTypedCompDecl();  // For @resistor, @AND, etc.
     std::unique_ptr<BoardDeclNode> parseBoardDecl();
     std::unique_ptr<ICDefNode> parseICDef();
     std::unique_ptr<MapBlockNode> parseMapBlock();
