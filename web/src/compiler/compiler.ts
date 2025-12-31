@@ -532,21 +532,24 @@ class IRGenerator {
         if (!this.boardGeometry) return;
         
         // For each IC, mark the holes where its pins are inserted
+        // Standard IC pin numbering:
+        // Bottom pins (1 to N/2) go into row F
+        // Top pins (N to N/2+1) go into row E
         for (const comp of ir.components) {
             const pinsPerSide = comp.pinCount / 2;
             const startCol = this.icStartColumns.get(comp.id);
             if (startCol === undefined) continue;
             
-            // Top pins (1 to pinsPerSide) go into row E
-            for (let i = 0; i < pinsPerSide; i++) {
-                const col = startCol + i;
-                this.occupiedHoles.set(`${col},E`, comp.id);
-            }
-            
-            // Bottom pins go into row F
+            // Bottom pins (1 to pinsPerSide) go into row F
             for (let i = 0; i < pinsPerSide; i++) {
                 const col = startCol + i;
                 this.occupiedHoles.set(`${col},F`, comp.id);
+            }
+            
+            // Top pins (N to N/2+1) go into row E
+            for (let i = 0; i < pinsPerSide; i++) {
+                const col = startCol + i;
+                this.occupiedHoles.set(`${col},E`, comp.id);
             }
         }
     }
@@ -667,6 +670,9 @@ class IRGenerator {
         }
 
         // For IC pins, find a free hole in the same column
+        // Standard IC pin numbering (counter-clockwise from pin 1):
+        // Bottom row (row F): pins 1, 2, 3, ..., N/2 (left to right)
+        // Top row (row E): pins N, N-1, N-2, ..., N/2+1 (left to right)
         const pinCount = BUILTIN_ICS[symbol.type] || 14;
         const pinsPerSide = pinCount / 2;
         
@@ -675,16 +681,17 @@ class IRGenerator {
         if (startCol === undefined) return { x: 0, y: 0 };
         
         if (pinNumber <= pinsPerSide) {
-            // Top pin (pins 1 to N/2)
+            // Bottom pins (1 to N/2) - inserted into row F, left to right
             const pinIndex = pinNumber - 1;
             const col = startCol + pinIndex;
-            const row = this.findFreeHoleInColumn(col, 'D', wireId);
+            const row = this.findFreeHoleInColumn(col, 'G', wireId);  // G is below F (free hole in bottom half)
             return this.getBoardHolePosition(col, row);
         } else {
-            // Bottom pin (pins N to N/2+1, numbered right to left)
+            // Top pins (N to N/2+1) - inserted into row E
+            // Pin N is at left (index 0), pin N/2+1 is at right (index N/2-1)
             const pinIndex = pinCount - pinNumber;
             const col = startCol + pinIndex;
-            const row = this.findFreeHoleInColumn(col, 'G', wireId);
+            const row = this.findFreeHoleInColumn(col, 'D', wireId);  // D is above E (free hole in top half)
             return this.getBoardHolePosition(col, row);
         }
     }

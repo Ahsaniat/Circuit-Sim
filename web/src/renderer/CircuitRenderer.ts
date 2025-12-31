@@ -14,14 +14,18 @@ const IC_PIN_LENGTH = 1.5;  // Pin length in base units (matches compiler)
 const E_TO_F_DISTANCE = BreadboardGeometry.HOLE_SPACING + BreadboardGeometry.CHANNEL_HEIGHT;
 const IC_BODY_HEIGHT = E_TO_F_DISTANCE - 2 * IC_PIN_LENGTH;
 
+// Wire hit detection tolerance (in base units)
+const WIRE_HIT_TOLERANCE = 1.5;
+
 interface DraggableElement {
     id: string;
-    type: 'component' | 'board';
-    x: number;      // In pixels (scaled)
+    type: 'component' | 'board' | 'wire';
+    x: number;      // In base units
     y: number;
     width: number;
     height: number;
     parentBoardId?: string;  // For components on a board
+    wireIndex?: number;      // For wires
 }
 
 export class CircuitRenderer {
@@ -109,15 +113,71 @@ export class CircuitRenderer {
 
     private findElementAt(pos: Position): DraggableElement | null {
         // Check in reverse order (top elements first)
-        // Components are rendered after boards, so check components first
+        // Wires → Components → Boards (in that priority order)
         for (let i = this.draggables.length - 1; i >= 0; i--) {
             const el = this.draggables[i];
-            if (pos.x >= el.x && pos.x <= el.x + el.width &&
-                pos.y >= el.y && pos.y <= el.y + el.height) {
-                return el;
+            
+            if (el.type === 'wire' && el.wireIndex !== undefined && this.circuitIR) {
+                // For wires, use line-segment hit detection
+                const wire = this.circuitIR.wires[el.wireIndex];
+                if (wire && this.isPointNearWire(pos, wire)) {
+                    return el;
+                }
+            } else {
+                // For boards and components, use bounding box
+                if (pos.x >= el.x && pos.x <= el.x + el.width &&
+                    pos.y >= el.y && pos.y <= el.y + el.height) {
+                    return el;
+                }
             }
         }
         return null;
+    }
+    
+    // Check if a point is close to any segment of a wire
+    private isPointNearWire(point: Position, wire: Wire): boolean {
+        const segments: [Position, Position][] = [];
+        
+        // Build list of wire segments
+        let current: Position = { x: wire.from.x, y: wire.from.y };
+        
+        if (wire.waypoints) {
+            for (const wp of wire.waypoints) {
+                segments.push([current, wp]);
+                current = wp;
+            }
+        }
+        segments.push([current, { x: wire.to.x, y: wire.to.y }]);
+        
+        // Check distance to each segment
+        for (const [p1, p2] of segments) {
+            if (this.distanceToSegment(point, p1, p2) < WIRE_HIT_TOLERANCE) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Calculate perpendicular distance from point to line segment
+    private distanceToSegment(point: Position, p1: Position, p2: Position): number {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const lengthSq = dx * dx + dy * dy;
+        
+        if (lengthSq === 0) {
+            // p1 and p2 are the same point
+            return Math.sqrt((point.x - p1.x) ** 2 + (point.y - p1.y) ** 2);
+        }
+        
+        // Parameter t for projection onto line segment [0, 1]
+        let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / lengthSq;
+        t = Math.max(0, Math.min(1, t));
+        
+        // Closest point on segment
+        const closestX = p1.x + t * dx;
+        const closestY = p1.y + t * dy;
+        
+        return Math.sqrt((point.x - closestX) ** 2 + (point.y - closestY) ** 2);
     }
 
     private onMouseDown(e: MouseEvent): void {
@@ -127,7 +187,15 @@ export class CircuitRenderer {
         if (element) {
             this.selectedId = element.id;
             this.isDragging = true;
-            this.dragOffset = { x: pos.x - element.x, y: pos.y - element.y };
+            
+            // For wires, store the initial position for offset calculation
+            if (element.type === 'wire' && element.wireIndex !== undefined && this.circuitIR) {
+                const wire = this.circuitIR.wires[element.wireIndex];
+                this.dragOffset = { x: pos.x - wire.from.x, y: pos.y - wire.from.y };
+            } else {
+                this.dragOffset = { x: pos.x - element.x, y: pos.y - element.y };
+            }
+            
             this.canvas.style.cursor = 'grabbing';
             this.redraw();
         } else {
@@ -180,6 +248,25 @@ export class CircuitRenderer {
                     // Update geometry
                     const geo = this.boardGeometries.get(board.id);
                     if (geo) geo.setPosition(newBaseX, newBaseY);
+                }
+            } else if (dragged.type === 'wire' && dragged.wireIndex !== undefined) {
+                // Move wire independently
+                const wire = this.circuitIR.wires[dragged.wireIndex];
+                if (wire) {
+                    const dx = newBaseX - wire.from.x;
+                    const dy = newBaseY - wire.from.y;
+                    
+                    wire.from.x += dx;
+                    wire.from.y += dy;
+                    wire.to.x += dx;
+                    wire.to.y += dy;
+                    
+                    if (wire.waypoints) {
+                        for (const wp of wire.waypoints) {
+                            wp.x += dx;
+                            wp.y += dy;
+                        }
+                    }
                 }
             } else {
                 // Move just the component
@@ -261,7 +348,7 @@ export class CircuitRenderer {
         
         // Add components (rendered on top, checked first)
         for (const comp of this.circuitIR.components) {
-            const { width, height } = this.getICDimensions(comp.pinCount);
+            const { width, height } = this.getComponentDimensions(comp);
             
             this.draggables.push({
                 id: comp.id,
@@ -272,6 +359,49 @@ export class CircuitRenderer {
                 height: height,
                 parentBoardId: this.circuitIR.boards[0]?.id
             });
+        }
+        
+        // Add wires (checked first during hit testing since added last)
+        for (let i = 0; i < this.circuitIR.wires.length; i++) {
+            const wire = this.circuitIR.wires[i];
+            // Compute bounding box for wire (used for reference, actual hit test uses line distance)
+            const minX = Math.min(wire.from.x, wire.to.x, ...(wire.waypoints?.map(w => w.x) || []));
+            const maxX = Math.max(wire.from.x, wire.to.x, ...(wire.waypoints?.map(w => w.x) || []));
+            const minY = Math.min(wire.from.y, wire.to.y, ...(wire.waypoints?.map(w => w.y) || []));
+            const maxY = Math.max(wire.from.y, wire.to.y, ...(wire.waypoints?.map(w => w.y) || []));
+            
+            this.draggables.push({
+                id: `wire_${i}`,
+                type: 'wire',
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY,
+                wireIndex: i
+            });
+        }
+    }
+    
+    /**
+     * Get component dimensions based on category
+     */
+    private getComponentDimensions(comp: ComponentIR): { width: number; height: number; pinLength: number } {
+        const category = comp.category || 'ic';
+        
+        switch (category) {
+            case 'passive':  // Resistors, capacitors, inductors
+                return { width: 6, height: 2.5, pinLength: 2 };
+            case 'diode':    // Diodes
+                return { width: 5, height: 2, pinLength: 2 };
+            case 'led':      // LEDs
+                return { width: 3, height: 3, pinLength: 2 };
+            case 'sensor':   // LDR, photodiode
+                return { width: 4, height: 4, pinLength: 2 };
+            case 'transistor': // BJT, MOSFET
+                return { width: 3, height: 4, pinLength: 2 };
+            case 'ic':
+            default:
+                return this.getICDimensions(comp.pinCount);
         }
     }
     
@@ -306,8 +436,8 @@ export class CircuitRenderer {
             this.renderComponent(comp);
         }
         
-        for (const wire of this.circuitIR.wires) {
-            this.renderWire(wire);
+        for (let i = 0; i < this.circuitIR.wires.length; i++) {
+            this.renderWire(this.circuitIR.wires[i], i);
         }
         
         this.ctx.restore();
@@ -444,19 +574,48 @@ export class CircuitRenderer {
     }
 
     private renderComponent(comp: ComponentIR): void {
+        const category = comp.category || 'ic';
+        
+        switch (category) {
+            case 'passive':
+                this.renderPassive(comp);
+                break;
+            case 'diode':
+                this.renderDiode(comp);
+                break;
+            case 'led':
+                this.renderLED(comp);
+                break;
+            case 'sensor':
+                this.renderSensor(comp);
+                break;
+            case 'transistor':
+                this.renderTransistor(comp);
+                break;
+            case 'ic':
+            default:
+                this.renderIC(comp);
+                break;
+        }
+    }
+    
+    /**
+     * Render IC chips with standard pin numbering:
+     * Bottom pins: 1, 2, 3, ..., N/2 (left to right)
+     * Top pins: N, N-1, N-2, ..., N/2+1 (left to right, i.e., right to left in numbering)
+     */
+    private renderIC(comp: ComponentIR): void {
         const S = BASE_SCALE;
         const x = comp.position.x * S;
         const y = comp.position.y * S;
         const pinsPerSide = comp.pinCount / 2;
         const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
         
-        // Use geometry-derived dimensions for consistent alignment
         const { width, height, pinLength } = this.getICDimensions(comp.pinCount);
         const icWidth = width * S;
         const icHeight = height * S;
         const pinLengthPx = pinLength * S;
         
-        // Calculate first pin X offset from body left edge (1 base unit = body margin)
         const firstPinOffset = 1 * S;
 
         // Selection highlight
@@ -477,32 +636,35 @@ export class CircuitRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Notch on left side
+        // Notch on left side (indicates pin 1 orientation)
         this.ctx.fillStyle = '#333';
         this.ctx.beginPath();
         this.ctx.arc(x, y + icHeight / 2, 4, -Math.PI / 2, Math.PI / 2);
         this.ctx.fill();
 
-        // Pin 1 dot
+        // Pin 1 dot (bottom-left corner, near first bottom pin)
         this.ctx.fillStyle = '#555';
         this.ctx.beginPath();
-        this.ctx.arc(x + 6, y + 6, 2, 0, Math.PI * 2);
+        this.ctx.arc(x + 6, y + icHeight - 6, 2, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Pins - positioned to align with breadboard holes
+        // Pins - Standard IC numbering: 
+        // Bottom: pins 1 to N/2 (left to right)
+        // Top: pins N to N/2+1 (left to right, so numbers decrease)
         this.ctx.fillStyle = '#888';
         for (let i = 0; i < pinsPerSide; i++) {
-            // Pin X position: first pin at body + offset, subsequent pins at hole spacing
             const px = x + firstPinOffset + i * holeSpacing;
-            // Top pins
-            this.ctx.fillRect(px - 1.5, y - pinLengthPx, 3, pinLengthPx);
-            this.ctx.beginPath();
-            this.ctx.arc(px, y - pinLengthPx, 2, 0, Math.PI * 2);
-            this.ctx.fill();
-            // Bottom pins
+            
+            // Bottom pins (1, 2, 3, ... N/2) - inserted into row F
             this.ctx.fillRect(px - 1.5, y + icHeight, 3, pinLengthPx);
             this.ctx.beginPath();
             this.ctx.arc(px, y + icHeight + pinLengthPx, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Top pins (N, N-1, N-2, ... N/2+1) - inserted into row E
+            this.ctx.fillRect(px - 1.5, y - pinLengthPx, 3, pinLengthPx);
+            this.ctx.beginPath();
+            this.ctx.arc(px, y - pinLengthPx, 2, 0, Math.PI * 2);
             this.ctx.fill();
         }
 
@@ -519,14 +681,494 @@ export class CircuitRenderer {
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + icWidth / 2, y + icHeight + pinLengthPx + 4);
     }
+    
+    /**
+     * Render passive components (resistor, capacitor, inductor, potentiometer)
+     * Resistor: zigzag body with two leads
+     * Capacitor: two plates
+     * Inductor: coil
+     */
+    private renderPassive(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height, pinLength } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const leadLen = pinLength * S;
+        
+        // Selection highlight
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - leadLen - 4, y - 4, w + leadLen * 2 + 8, h + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        const centerY = y + h / 2;
+        
+        // Leads (wires)
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - leadLen, centerY);
+        this.ctx.lineTo(x, centerY);
+        this.ctx.moveTo(x + w, centerY);
+        this.ctx.lineTo(x + w + leadLen, centerY);
+        this.ctx.stroke();
+        
+        // Lead terminals
+        this.ctx.fillStyle = '#888';
+        this.ctx.beginPath();
+        this.ctx.arc(x - leadLen, centerY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.arc(x + w + leadLen, centerY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        if (comp.type === 'CAP') {
+            // Capacitor: two parallel plates
+            this.ctx.strokeStyle = '#4a7c59';
+            this.ctx.lineWidth = 3 / this.zoom;
+            const plateGap = 4;
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + w/2 - plateGap/2, y);
+            this.ctx.lineTo(x + w/2 - plateGap/2, y + h);
+            this.ctx.moveTo(x + w/2 + plateGap/2, y);
+            this.ctx.lineTo(x + w/2 + plateGap/2, y + h);
+            this.ctx.stroke();
+        } else if (comp.type === 'IND') {
+            // Inductor: coil/loops
+            this.ctx.strokeStyle = '#6b5b95';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.beginPath();
+            const numLoops = 4;
+            const loopWidth = w / numLoops;
+            for (let i = 0; i < numLoops; i++) {
+                this.ctx.arc(x + loopWidth * (i + 0.5), centerY, loopWidth / 2, Math.PI, 0, false);
+            }
+            this.ctx.stroke();
+        } else if (comp.type === 'POT') {
+            // Potentiometer: resistor body with arrow
+            this.ctx.fillStyle = '#d4a574';
+            this.ctx.strokeStyle = '#8b6914';
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.roundRect(x, y, w, h, 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            // Arrow for wiper
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + w/2, y - 4);
+            this.ctx.lineTo(x + w/2 - 4, y - 8);
+            this.ctx.lineTo(x + w/2 + 4, y - 8);
+            this.ctx.closePath();
+            this.ctx.fillStyle = '#666';
+            this.ctx.fill();
+        } else {
+            // Resistor: rectangular body with color bands
+            // Body
+            this.ctx.fillStyle = '#d4a574';  // Tan/beige color
+            this.ctx.strokeStyle = '#8b6914';
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.roundRect(x, y, w, h, 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            
+            // Color bands (simplified - 4 bands)
+            const bandColors = ['#8b4513', '#000', '#f00', '#ffd700'];
+            const bandWidth = 2;
+            const bandSpacing = w / 5;
+            for (let i = 0; i < 4; i++) {
+                this.ctx.fillStyle = bandColors[i];
+                this.ctx.fillRect(x + bandSpacing * (i + 0.5) - bandWidth/2, y + 1, bandWidth, h - 2);
+            }
+        }
+        
+        // Label
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(`${comp.id}${comp.value ? ' ' + comp.value : ''}`, x + w/2, y + h + 4);
+    }
+    
+    /**
+     * Render diodes (standard, zener, schottky)
+     * Triangle pointing toward cathode with line
+     */
+    private renderDiode(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height, pinLength } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const leadLen = pinLength * S;
+        
+        // Selection highlight
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - leadLen - 4, y - 4, w + leadLen * 2 + 8, h + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        const centerY = y + h / 2;
+        
+        // Leads
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - leadLen, centerY);
+        this.ctx.lineTo(x, centerY);
+        this.ctx.moveTo(x + w, centerY);
+        this.ctx.lineTo(x + w + leadLen, centerY);
+        this.ctx.stroke();
+        
+        // Lead terminals
+        this.ctx.fillStyle = '#888';
+        this.ctx.beginPath();
+        this.ctx.arc(x - leadLen, centerY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.arc(x + w + leadLen, centerY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Diode body - black glass
+        this.ctx.fillStyle = '#1a1a1a';
+        this.ctx.strokeStyle = '#000';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.roundRect(x, y, w, h, 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        // Cathode band (white/silver stripe)
+        this.ctx.fillStyle = '#ccc';
+        this.ctx.fillRect(x + w - 6, y, 4, h);
+        
+        // Label
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, x + w/2, y + h + 4);
+    }
+    
+    /**
+     * Render LEDs (light emitting diodes)
+     * Rounded dome shape with flat bottom (cathode side)
+     */
+    private renderLED(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height, pinLength } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const leadLen = pinLength * S;
+        
+        // Selection highlight
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.beginPath();
+            this.ctx.arc(x + w/2, y + h/2, w/2 + 4, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        const centerX = x + w / 2;
+        const centerY = y + h / 2;
+        const radius = Math.min(w, h) / 2;
+        
+        // Leads (vertical for LED)
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.beginPath();
+        // Anode (longer)
+        this.ctx.moveTo(centerX - 4, y + h);
+        this.ctx.lineTo(centerX - 4, y + h + leadLen);
+        // Cathode (shorter with flat)
+        this.ctx.moveTo(centerX + 4, y + h);
+        this.ctx.lineTo(centerX + 4, y + h + leadLen * 0.7);
+        this.ctx.stroke();
+        
+        // Lead terminals
+        this.ctx.fillStyle = '#888';
+        this.ctx.beginPath();
+        this.ctx.arc(centerX - 4, y + h + leadLen, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.arc(centerX + 4, y + h + leadLen * 0.7, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // LED dome - color based on type
+        let ledColor = '#ff3333';  // Default red
+        if (comp.type === 'IR_LED') ledColor = '#660066';  // Purple tint for IR
+        else if (comp.type.includes('GREEN')) ledColor = '#33ff33';
+        else if (comp.type.includes('BLUE')) ledColor = '#3333ff';
+        else if (comp.type.includes('YELLOW')) ledColor = '#ffff33';
+        
+        // Dome gradient
+        const gradient = this.ctx.createRadialGradient(
+            centerX - radius/3, centerY - radius/3, 0,
+            centerX, centerY, radius
+        );
+        gradient.addColorStop(0, '#ffffff');
+        gradient.addColorStop(0.3, ledColor);
+        gradient.addColorStop(1, this.darkenColor(ledColor, 0.5));
+        
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Outline
+        this.ctx.strokeStyle = '#666';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.stroke();
+        
+        // Flat bottom indicator (cathode side)
+        this.ctx.strokeStyle = '#333';
+        this.ctx.beginPath();
+        this.ctx.moveTo(centerX + 3, y + h - 2);
+        this.ctx.lineTo(centerX + radius - 1, y + h - 2);
+        this.ctx.stroke();
+        
+        // Label
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, centerX, y + h + leadLen + 4);
+    }
+    
+    /**
+     * Render sensors (LDR, photodiode)
+     */
+    private renderSensor(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height, pinLength } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const leadLen = pinLength * S;
+        
+        // Selection highlight
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - leadLen - 4, y - 4, w + leadLen * 2 + 8, h + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        const centerX = x + w / 2;
+        const centerY = y + h / 2;
+        
+        // Leads (vertical)
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.moveTo(centerX - 4, y + h);
+        this.ctx.lineTo(centerX - 4, y + h + leadLen);
+        this.ctx.moveTo(centerX + 4, y + h);
+        this.ctx.lineTo(centerX + 4, y + h + leadLen);
+        this.ctx.stroke();
+        
+        // Lead terminals
+        this.ctx.fillStyle = '#888';
+        this.ctx.beginPath();
+        this.ctx.arc(centerX - 4, y + h + leadLen, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.arc(centerX + 4, y + h + leadLen, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        if (comp.type === 'LDR') {
+            // LDR - brownish disc with zigzag pattern
+            this.ctx.fillStyle = '#8b4513';
+            this.ctx.beginPath();
+            this.ctx.arc(centerX, centerY, w/2, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Zigzag pattern (light-sensitive element)
+            this.ctx.strokeStyle = '#ffd700';
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.beginPath();
+            const zigzags = 5;
+            const zigWidth = w * 0.6 / zigzags;
+            for (let i = 0; i < zigzags; i++) {
+                const startX = x + w * 0.2 + i * zigWidth;
+                this.ctx.moveTo(startX, centerY - h * 0.2);
+                this.ctx.lineTo(startX + zigWidth/2, centerY + h * 0.2);
+                this.ctx.lineTo(startX + zigWidth, centerY - h * 0.2);
+            }
+            this.ctx.stroke();
+        } else {
+            // Photodiode - similar to diode but with light arrows
+            this.ctx.fillStyle = '#333';
+            this.ctx.beginPath();
+            this.ctx.arc(centerX, centerY, w/2, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Light arrows pointing at sensor
+            this.ctx.strokeStyle = '#ff0';
+            this.ctx.lineWidth = 1 / this.zoom;
+            for (let i = -1; i <= 1; i++) {
+                const arrowX = x - 4;
+                const arrowY = centerY + i * 4;
+                this.ctx.beginPath();
+                this.ctx.moveTo(arrowX - 6, arrowY);
+                this.ctx.lineTo(arrowX, arrowY);
+                this.ctx.moveTo(arrowX - 2, arrowY - 2);
+                this.ctx.lineTo(arrowX, arrowY);
+                this.ctx.lineTo(arrowX - 2, arrowY + 2);
+                this.ctx.stroke();
+            }
+        }
+        
+        // Outline
+        this.ctx.strokeStyle = '#666';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.arc(centerX, centerY, w/2, 0, Math.PI * 2);
+        this.ctx.stroke();
+        
+        // Label
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, centerX, y + h + leadLen + 4);
+    }
+    
+    /**
+     * Render transistors (NPN, PNP, NMOS, PMOS)
+     * TO-92 package with 3 pins
+     */
+    private renderTransistor(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height, pinLength } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const leadLen = pinLength * S;
+        
+        // Selection highlight
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - 4, y - 4, w + 8, h + leadLen + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        const centerX = x + w / 2;
+        
+        // TO-92 package body - half-cylinder shape
+        // Flat back
+        this.ctx.fillStyle = '#1a1a1a';
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y + h);
+        this.ctx.lineTo(x, y + h * 0.3);
+        this.ctx.arc(centerX, y + h * 0.3, w/2, Math.PI, 0, false);
+        this.ctx.lineTo(x + w, y + h);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Outline
+        this.ctx.strokeStyle = '#333';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.stroke();
+        
+        // Three leads (E/B/C for BJT or S/G/D for MOSFET)
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        const pinSpacing = w / 3;
+        for (let i = 0; i < 3; i++) {
+            const px = x + pinSpacing * (i + 0.5);
+            this.ctx.beginPath();
+            this.ctx.moveTo(px, y + h);
+            this.ctx.lineTo(px, y + h + leadLen);
+            this.ctx.stroke();
+            
+            // Pin terminals
+            this.ctx.fillStyle = '#888';
+            this.ctx.beginPath();
+            this.ctx.arc(px, y + h + leadLen, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        
+        // Type label on body
+        this.ctx.fillStyle = '#999';
+        this.ctx.font = `${7 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(comp.type, centerX, y + h * 0.6);
+        
+        // Pin labels (tiny, below pins)
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${6 / this.zoom}px sans-serif`;
+        const isMOSFET = comp.type === 'NMOS' || comp.type === 'PMOS';
+        const pinLabels = isMOSFET ? ['S', 'G', 'D'] : ['E', 'B', 'C'];
+        for (let i = 0; i < 3; i++) {
+            const px = x + pinSpacing * (i + 0.5);
+            this.ctx.fillText(pinLabels[i], px, y + h + leadLen + 8);
+        }
+        
+        // Component ID
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.fillText(comp.id, centerX, y - 6);
+    }
+    
+    // Helper to darken a hex color
+    private darkenColor(hex: string, factor: number): string {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgb(${Math.floor(r * factor)}, ${Math.floor(g * factor)}, ${Math.floor(b * factor)})`;
+    }
 
-    private renderWire(wire: Wire): void {
+    private renderWire(wire: Wire, wireIndex?: number): void {
         const S = BASE_SCALE;
         const fromX = wire.from.x * S;
         const fromY = wire.from.y * S;
         const toX = wire.to.x * S;
         const toY = wire.to.y * S;
+        
+        // Check if this wire is selected
+        const isSelected = this.selectedId === `wire_${wireIndex}`;
 
+        // Selection highlight (draw thicker line behind)
+        if (isSelected) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 6 / this.zoom;
+            this.ctx.lineCap = 'round';
+            this.ctx.lineJoin = 'round';
+            this.ctx.setLineDash([]);
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(fromX, fromY);
+            if (wire.waypoints) {
+                for (const wp of wire.waypoints) {
+                    this.ctx.lineTo(wp.x * S, wp.y * S);
+                }
+            }
+            this.ctx.lineTo(toX, toY);
+            this.ctx.stroke();
+        }
+
+        // Main wire
         this.ctx.strokeStyle = wire.color;
         this.ctx.lineWidth = 2 / this.zoom;
         this.ctx.lineCap = 'round';
@@ -552,6 +1194,18 @@ export class CircuitRenderer {
         this.ctx.beginPath();
         this.ctx.arc(toX, toY, 3, 0, Math.PI * 2);
         this.ctx.fill();
+        
+        // Selection indicators on terminals
+        if (isSelected) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.beginPath();
+            this.ctx.arc(fromX, fromY, 5, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.arc(toX, toY, 5, 0, Math.PI * 2);
+            this.ctx.stroke();
+        }
     }
 
     private roundRect(x: number, y: number, w: number, h: number, r: number): void {
