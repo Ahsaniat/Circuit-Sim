@@ -252,7 +252,8 @@ export class CircuitRenderer {
         // IC is horizontal: width is along pins, height is IC body
         const pinsPerSide = comp.pinCount / 2;
         const icWidth = (pinsPerSide - 1) * HOLE_SPACING + 8;
-        const icHeight = 28;
+        const icHeight = 28; // 7 base units * 4
+        const pinLength = 6; // 1.5 base units * 4
 
         // IC body
         this.ctx.fillStyle = '#1a1a1a';
@@ -275,16 +276,27 @@ export class CircuitRenderer {
         this.ctx.fill();
 
         // Pins - top row (pins 1 to N/2, left to right)
-        this.ctx.fillStyle = '#777';
+        // Pin tip should reach exactly to the hole (y - pinLength)
+        this.ctx.fillStyle = '#888';
         for (let i = 0; i < pinsPerSide; i++) {
             const px = x + 4 + i * HOLE_SPACING;
-            this.ctx.fillRect(px - 1.5, y - 6, 3, 6);
+            // Draw pin from body top going up to hole
+            this.ctx.fillRect(px - 1.5, y - pinLength, 3, pinLength);
+            // Draw small circle at pin tip (hole connection point)
+            this.ctx.beginPath();
+            this.ctx.arc(px, y - pinLength, 2, 0, Math.PI * 2);
+            this.ctx.fill();
         }
         
         // Pins - bottom row (pins N to N/2+1, left to right)
         for (let i = 0; i < pinsPerSide; i++) {
             const px = x + 4 + i * HOLE_SPACING;
-            this.ctx.fillRect(px - 1.5, y + icHeight, 3, 6);
+            // Draw pin from body bottom going down to hole
+            this.ctx.fillRect(px - 1.5, y + icHeight, 3, pinLength);
+            // Draw small circle at pin tip
+            this.ctx.beginPath();
+            this.ctx.arc(px, y + icHeight + pinLength, 2, 0, Math.PI * 2);
+            this.ctx.fill();
         }
 
         // IC label
@@ -298,7 +310,7 @@ export class CircuitRenderer {
         this.ctx.fillStyle = '#666';
         this.ctx.font = '10px sans-serif';
         this.ctx.textBaseline = 'top';
-        this.ctx.fillText(comp.id, x + icWidth / 2, y + icHeight + 10);
+        this.ctx.fillText(comp.id, x + icWidth / 2, y + icHeight + pinLength + 4);
     }
 
     private renderWire(wire: Wire): void {

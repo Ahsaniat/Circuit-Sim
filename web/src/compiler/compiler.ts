@@ -428,35 +428,40 @@ class IRGenerator {
         }
 
         // Place ICs on breadboard straddling the center channel
+        // ICs pins must snap exactly to breadboard holes
         const board = ir.boards[0];
         const boardX = board.position.x;
         const boardY = board.position.y;
         
-        // Calculate where holes start
-        const holesStartX = boardX + this.HOLE_MARGIN;
-        const topHalfY = boardY + this.RAIL_HEIGHT + this.HOLE_MARGIN;
-        const channelY = topHalfY + this.ROWS_PER_HALF * this.HOLE_SPACING;
+        // Breadboard geometry (must match renderer)
+        const railHeight = 24 / 4; // Convert from renderer scale
+        const holeMargin = 18 / 4;
         
-        // ICs straddle the channel: top pins in row E, bottom pins in row F
-        // Row E is the last row of top half (index 4)
-        // Row F is the first row of bottom half
+        // Calculate exact hole positions
+        const holesStartX = boardX + holeMargin;
+        const topHalfY = boardY + railHeight + holeMargin;
+        
+        // Row E (index 4)
         const rowEY = topHalfY + 4 * this.HOLE_SPACING;
-        const rowFY = channelY + this.CHANNEL_HEIGHT;
         
-        // IC body sits between row E and row F, centered on channel
-        const icBodyY = (rowEY + rowFY) / 2 - 3.5; // Center the 7-unit tall body
+        // Pin tip is at body_y - pinLength (in base units)
+        // For pin tip to land on rowEY: body_y - pinLength = rowEY => body_y = rowEY + pinLength
+        const pinLength = 1.5; // base units (6px / 4)
+        
+        // Position IC so top pins land exactly on row E
+        const icBodyY = rowEY + pinLength;
         
         let startCol = 2; // Start at column 3 (0-indexed = 2)
         
         for (const comp of ir.components) {
             const pinsPerSide = comp.pinCount / 2;
             
-            // Position IC so pin 1 aligns with column startCol
+            // Position IC so first pin (pin 1) aligns exactly with hole at startCol
+            // Pin x = body_x + 1 (in base units), should equal holesStartX + startCol * HOLE_SPACING
             const icX = holesStartX + startCol * this.HOLE_SPACING - 1;
-            const icY = icBodyY;
             
-            comp.position = { x: icX, y: icY };
-            this.componentPositions.set(comp.id, { x: icX, y: icY });
+            comp.position = { x: icX, y: icBodyY };
+            this.componentPositions.set(comp.id, { x: icX, y: icBodyY });
             
             // Next IC starts after this one plus gap
             startCol += pinsPerSide + 2;
@@ -467,10 +472,14 @@ class IRGenerator {
         const boardPos = this.componentPositions.get(boardId);
         if (!boardPos) return { x: 0, y: 0 };
         
-        const holesStartX = boardPos.x + this.HOLE_MARGIN;
-        const topHalfY = boardPos.y + this.RAIL_HEIGHT + this.HOLE_MARGIN;
-        const channelY = topHalfY + this.ROWS_PER_HALF * this.HOLE_SPACING;
-        const bottomHalfY = channelY + this.CHANNEL_HEIGHT;
+        // Use same constants as layoutComponents
+        const railHeight = 24 / 4;
+        const holeMargin = 18 / 4;
+        const channelHeight = 14 / 4;
+        
+        const holesStartX = boardPos.x + holeMargin;
+        const topHalfY = boardPos.y + railHeight + holeMargin;
+        const bottomHalfY = topHalfY + 5 * this.HOLE_SPACING + channelHeight;
         
         const rowMap: Record<string, number> = {
             'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4,
@@ -496,7 +505,7 @@ class IRGenerator {
 
         if (symbol.kind === 'board') {
             const col = ((pinNumber - 1) % this.NUM_COLS) + 1;
-            const row = pinNumber <= this.NUM_COLS ? 'D' : 'G'; // Use adjacent rows
+            const row = pinNumber <= this.NUM_COLS ? 'D' : 'G';
             return this.getBoardHolePosition(componentId, col, row);
         }
 
@@ -504,22 +513,25 @@ class IRGenerator {
         const pinCount = BUILTIN_ICS[symbol.type] || 14;
         const pinsPerSide = pinCount / 2;
         
-        const holesStartX = pos.x + 1;
+        // IC body position is stored in pos
+        // Pin x = pos.x + 1 + pinIndex * HOLE_SPACING (same as renderer)
+        const pinLength = 1.5; // base units
+        const icHeight = 7; // base units
         
         if (pinNumber <= pinsPerSide) {
-            // Top pin (row E) - wire connects to row D
+            // Top pin - connects to row D (one row above row E)
             const pinIndex = pinNumber - 1;
-            return {
-                x: holesStartX + pinIndex * this.HOLE_SPACING,
-                y: pos.y - 1.5 - this.HOLE_SPACING // Row D (one above E)
-            };
+            const pinX = pos.x + 1 + pinIndex * this.HOLE_SPACING;
+            // Row E is at pos.y - pinLength, Row D is one HOLE_SPACING above
+            const rowDY = pos.y - pinLength - this.HOLE_SPACING;
+            return { x: pinX, y: rowDY };
         } else {
-            // Bottom pin (row F) - wire connects to row G
+            // Bottom pin - connects to row G (one row below row F)
             const pinIndex = pinCount - pinNumber;
-            return {
-                x: holesStartX + pinIndex * this.HOLE_SPACING,
-                y: pos.y + 8.5 + this.HOLE_SPACING // Row G (one below F)
-            };
+            const pinX = pos.x + 1 + pinIndex * this.HOLE_SPACING;
+            // Row F is at pos.y + icHeight + pinLength, Row G is one HOLE_SPACING below
+            const rowGY = pos.y + icHeight + pinLength + this.HOLE_SPACING;
+            return { x: pinX, y: rowGY };
         }
     }
 
