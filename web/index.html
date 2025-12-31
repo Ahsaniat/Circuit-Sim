@@ -189,15 +189,17 @@
                 <span class="collapse-icon">&#9660;</span>
             </div>
             <div class="editor-content">
-                <textarea id="code-editor" spellcheck="false">// New syntax example
+                <textarea id="code-editor" spellcheck="false">// LED Circuit with Logic Gates
 @AND A1 7408
-@OR O1 7432
+@resistor R1 330
+@led LED1 red
+@npn Q1 2N2222
 @board B1 breadboard_830
 
 map (
-    (A1 pin 3 -> O1 pin 1)
-    (A1 pin 6 -> O1 pin 2)
-    (O1 pin 3 -> A1 pin 4)
+    (A1 pin 3 -> R1 pin 1)
+    (R1 pin 2 -> LED1 pin 1)
+    (A1 pin 6 -> Q1 pin 1)
 )</textarea>
                 <div class="toolbar">
                     <button class="btn btn-primary" id="compile-btn">Compile</button>
