@@ -354,15 +354,17 @@ export function calculatePlacement(
         
         if (footprint.orientation === 'horizontal') {
             // Horizontal component - pins span columns in same row
+            // For 2-pin components that span multiple holes, calculate column from offsetX
             const pin1 = footprint.pins[0];
             const hole1 = geo.getHolePosition(startCol, row);
             
             bodyX = hole1.x - pin1.offsetX;
             bodyY = hole1.y - pin1.offsetY;
             
-            for (let i = 0; i < footprint.pins.length; i++) {
-                const pin = footprint.pins[i];
-                const col = startCol + i;
+            for (const pin of footprint.pins) {
+                // Calculate column based on pin offset from first pin
+                const colOffset = Math.round(pin.offsetX / BreadboardGeometry.HOLE_SPACING);
+                const col = startCol + colOffset;
                 const hole = geo.getHolePosition(col, row);
                 pinPositions.set(pin.number, {
                     x: hole.x,
@@ -370,7 +372,9 @@ export function calculatePlacement(
                     col,
                     row
                 });
-                occupiedColumns.push(col);
+                if (!occupiedColumns.includes(col)) {
+                    occupiedColumns.push(col);
+                }
             }
         } else {
             // Vertical component - pins in adjacent columns of same row
