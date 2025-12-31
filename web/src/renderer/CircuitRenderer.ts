@@ -20,14 +20,18 @@ const WIRE_HIT_TOLERANCE = 1.5;
 
 interface DraggableElement {
     id: string;
-    type: 'component' | 'board' | 'wire';
+    type: 'component' | 'board' | 'wire' | 'wire_terminal';
     x: number;      // In base units
     y: number;
     width: number;
     height: number;
     parentBoardId?: string;  // For components on a board
     wireIndex?: number;      // For wires
+    terminal?: 'from' | 'to';  // For wire terminals
 }
+
+// Wire terminal hit detection radius (in base units)
+const WIRE_TERMINAL_RADIUS = 2;
 
 export class CircuitRenderer {
     private canvas: HTMLCanvasElement;
@@ -47,22 +51,45 @@ export class CircuitRenderer {
     private zoom = 1;
     private panX = 0;
     private panY = 0;
+    
+    // Tooltip state
+    private tooltip: HTMLDivElement | null = null;
+    private hoveredComponentId: string | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Failed to get 2D context');
         this.ctx = ctx;
+        this.createTooltip();
         this.resize();
         this.setupEventListeners();
         window.addEventListener('resize', () => this.resize());
+    }
+    
+    private createTooltip(): void {
+        this.tooltip = document.createElement('div');
+        this.tooltip.style.cssText = `
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+            white-space: nowrap;
+        `;
+        document.body.appendChild(this.tooltip);
     }
 
     private setupEventListeners(): void {
         this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
         this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
         this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-        this.canvas.addEventListener('mouseleave', this.onMouseUp.bind(this));
+        this.canvas.addEventListener('mouseleave', this.onMouseLeave.bind(this));
         this.canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
     }
 
@@ -113,8 +140,46 @@ export class CircuitRenderer {
     }
 
     private findElementAt(pos: Position): DraggableElement | null {
-        // Check in reverse order (top elements first)
-        // Wires → Components → Boards (in that priority order)
+        // Priority: Wire terminals → Wires → Components → Boards
+        // First check wire terminals (highest priority for precise terminal dragging)
+        if (this.circuitIR) {
+            for (let i = this.circuitIR.wires.length - 1; i >= 0; i--) {
+                const wire = this.circuitIR.wires[i];
+                
+                // Check 'from' terminal
+                const distFrom = Math.sqrt((pos.x - wire.from.x) ** 2 + (pos.y - wire.from.y) ** 2);
+                if (distFrom < WIRE_TERMINAL_RADIUS) {
+                    return {
+                        id: `wire_${i}_from`,
+                        type: 'wire_terminal',
+                        x: wire.from.x,
+                        y: wire.from.y,
+                        width: 0,
+                        height: 0,
+                        wireIndex: i,
+                        terminal: 'from'
+                    };
+                }
+                
+                // Check 'to' terminal
+                const distTo = Math.sqrt((pos.x - wire.to.x) ** 2 + (pos.y - wire.to.y) ** 2);
+                if (distTo < WIRE_TERMINAL_RADIUS) {
+                    return {
+                        id: `wire_${i}_to`,
+                        type: 'wire_terminal',
+                        x: wire.to.x,
+                        y: wire.to.y,
+                        width: 0,
+                        height: 0,
+                        wireIndex: i,
+                        terminal: 'to'
+                    };
+                }
+            }
+        }
+        
+        // Check other draggables in reverse order (top elements first)
+        // Wires → Components → Boards
         for (let i = this.draggables.length - 1; i >= 0; i--) {
             const el = this.draggables[i];
             
@@ -185,12 +250,18 @@ export class CircuitRenderer {
         const pos = this.getMousePos(e);
         const element = this.findElementAt(pos);
         
+        // Hide tooltip on click
+        this.hideTooltip();
+        
         if (element) {
             this.selectedId = element.id;
             this.isDragging = true;
             
-            // For wires, store the initial position for offset calculation
-            if (element.type === 'wire' && element.wireIndex !== undefined && this.circuitIR) {
+            if (element.type === 'wire_terminal') {
+                // For wire terminals, no offset - move directly to mouse position
+                this.dragOffset = { x: 0, y: 0 };
+            } else if (element.type === 'wire' && element.wireIndex !== undefined && this.circuitIR) {
+                // For wires (body), store offset from wire's 'from' position
                 const wire = this.circuitIR.wires[element.wireIndex];
                 this.dragOffset = { x: pos.x - wire.from.x, y: pos.y - wire.from.y };
             } else {
@@ -213,31 +284,75 @@ export class CircuitRenderer {
             const newBaseX = pos.x - this.dragOffset.x;
             const newBaseY = pos.y - this.dragOffset.y;
             
-            // Find the dragged element
-            const dragged = this.draggables.find(d => d.id === this.selectedId);
-            if (!dragged) return;
-            
-            if (dragged.type === 'board') {
-                // Move board and all components and wires on it
-                const board = this.circuitIR.boards.find(b => b.id === this.selectedId);
-                if (board) {
-                    const dx = newBaseX - board.position.x;
-                    const dy = newBaseY - board.position.y;
+            // Check if dragging a wire terminal
+            if (this.selectedId.includes('_from') || this.selectedId.includes('_to')) {
+                // Wire terminal dragging - move only that terminal
+                const wireIndexMatch = this.selectedId.match(/wire_(\d+)_(from|to)/);
+                if (wireIndexMatch) {
+                    const wireIndex = parseInt(wireIndexMatch[1]);
+                    const terminal = wireIndexMatch[2] as 'from' | 'to';
+                    const wire = this.circuitIR.wires[wireIndex];
                     
-                    board.position = { x: newBaseX, y: newBaseY };
-                    
-                    // Move all components on this board
-                    for (const comp of this.circuitIR.components) {
-                        comp.position.x += dx;
-                        comp.position.y += dy;
+                    if (wire) {
+                        if (terminal === 'from') {
+                            wire.from.x = pos.x;
+                            wire.from.y = pos.y;
+                        } else {
+                            wire.to.x = pos.x;
+                            wire.to.y = pos.y;
+                        }
                     }
-                    
-                    // Move all wires (update positions and waypoints)
-                    for (const wire of this.circuitIR.wires) {
+                }
+            } else {
+                // Find the dragged element
+                const dragged = this.draggables.find(d => d.id === this.selectedId);
+                if (!dragged) return;
+                
+                if (dragged.type === 'board') {
+                    // Move board and all components and wires on it
+                    const board = this.circuitIR.boards.find(b => b.id === this.selectedId);
+                    if (board) {
+                        const dx = newBaseX - board.position.x;
+                        const dy = newBaseY - board.position.y;
+                        
+                        board.position = { x: newBaseX, y: newBaseY };
+                        
+                        // Move all components on this board
+                        for (const comp of this.circuitIR.components) {
+                            comp.position.x += dx;
+                            comp.position.y += dy;
+                        }
+                        
+                        // Move all wires (update positions and waypoints)
+                        for (const wire of this.circuitIR.wires) {
+                            wire.from.x += dx;
+                            wire.from.y += dy;
+                            wire.to.x += dx;
+                            wire.to.y += dy;
+                            if (wire.waypoints) {
+                                for (const wp of wire.waypoints) {
+                                    wp.x += dx;
+                                    wp.y += dy;
+                                }
+                            }
+                        }
+                        
+                        // Update geometry
+                        const geo = this.boardGeometries.get(board.id);
+                        if (geo) geo.setPosition(newBaseX, newBaseY);
+                    }
+                } else if (dragged.type === 'wire' && dragged.wireIndex !== undefined) {
+                    // Move entire wire independently (when dragging by body, not terminal)
+                    const wire = this.circuitIR.wires[dragged.wireIndex];
+                    if (wire) {
+                        const dx = newBaseX - wire.from.x;
+                        const dy = newBaseY - wire.from.y;
+                        
                         wire.from.x += dx;
                         wire.from.y += dy;
                         wire.to.x += dx;
                         wire.to.y += dy;
+                        
                         if (wire.waypoints) {
                             for (const wp of wire.waypoints) {
                                 wp.x += dx;
@@ -245,49 +360,79 @@ export class CircuitRenderer {
                             }
                         }
                     }
-                    
-                    // Update geometry
-                    const geo = this.boardGeometries.get(board.id);
-                    if (geo) geo.setPosition(newBaseX, newBaseY);
-                }
-            } else if (dragged.type === 'wire' && dragged.wireIndex !== undefined) {
-                // Move wire independently
-                const wire = this.circuitIR.wires[dragged.wireIndex];
-                if (wire) {
-                    const dx = newBaseX - wire.from.x;
-                    const dy = newBaseY - wire.from.y;
-                    
-                    wire.from.x += dx;
-                    wire.from.y += dy;
-                    wire.to.x += dx;
-                    wire.to.y += dy;
-                    
-                    if (wire.waypoints) {
-                        for (const wp of wire.waypoints) {
-                            wp.x += dx;
-                            wp.y += dy;
-                        }
+                } else {
+                    // Move just the component
+                    const comp = this.circuitIR.components.find(c => c.id === this.selectedId);
+                    if (comp) {
+                        comp.position = { x: newBaseX, y: newBaseY };
                     }
-                }
-            } else {
-                // Move just the component
-                const comp = this.circuitIR.components.find(c => c.id === this.selectedId);
-                if (comp) {
-                    comp.position = { x: newBaseX, y: newBaseY };
                 }
             }
             
             this.rebuildDraggables();
             this.redraw();
         } else {
+            // Not dragging - handle hover and tooltip
             const element = this.findElementAt(pos);
-            this.canvas.style.cursor = element ? 'grab' : 'default';
+            
+            // Update cursor
+            if (element?.type === 'wire_terminal') {
+                this.canvas.style.cursor = 'crosshair';
+            } else if (element) {
+                this.canvas.style.cursor = 'grab';
+            } else {
+                this.canvas.style.cursor = 'default';
+            }
+            
+            // Show tooltip for components only (not board, not wires)
+            if (element && element.type === 'component' && this.circuitIR) {
+                const comp = this.circuitIR.components.find(c => c.id === element.id);
+                if (comp && comp.id !== this.hoveredComponentId) {
+                    this.hoveredComponentId = comp.id;
+                    const label = comp.value ? `${comp.id} (${comp.type}: ${comp.value})` : `${comp.id} (${comp.type})`;
+                    this.showTooltip(e.clientX, e.clientY, label);
+                } else if (comp) {
+                    // Update tooltip position
+                    this.updateTooltipPosition(e.clientX, e.clientY);
+                }
+            } else {
+                if (this.hoveredComponentId) {
+                    this.hoveredComponentId = null;
+                    this.hideTooltip();
+                }
+            }
         }
+    }
+    
+    private showTooltip(x: number, y: number, text: string): void {
+        if (!this.tooltip) return;
+        this.tooltip.textContent = text;
+        this.tooltip.style.left = `${x + 12}px`;
+        this.tooltip.style.top = `${y + 12}px`;
+        this.tooltip.style.display = 'block';
+    }
+    
+    private updateTooltipPosition(x: number, y: number): void {
+        if (!this.tooltip) return;
+        this.tooltip.style.left = `${x + 12}px`;
+        this.tooltip.style.top = `${y + 12}px`;
+    }
+    
+    private hideTooltip(): void {
+        if (!this.tooltip) return;
+        this.tooltip.style.display = 'none';
     }
 
     private onMouseUp(): void {
         this.isDragging = false;
         this.canvas.style.cursor = 'default';
+    }
+    
+    private onMouseLeave(): void {
+        this.isDragging = false;
+        this.canvas.style.cursor = 'default';
+        this.hoveredComponentId = null;
+        this.hideTooltip();
     }
 
     resize(): void {
