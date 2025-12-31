@@ -1,4 +1,5 @@
 import { CircuitIR, ComponentIR, BoardIR, Wire, Position } from '../types';
+import { BreadboardGeometry } from '../geometry/BreadboardGeometry';
 
 interface Token {
     type: string;
@@ -325,13 +326,11 @@ class IRGenerator {
     // Hole occupancy tracking: key = "col,row" (e.g., "5,D"), value = componentId or wire index
     private occupiedHoles: Map<string, string> = new Map();
     
-    // Breadboard geometry constants
-    private readonly HOLE_SPACING = 2.54;
-    private readonly NUM_COLS = 63;
-    private readonly ROWS_PER_HALF = 5;
-    private readonly RAIL_HEIGHT = 20 / 4; // In base units
-    private readonly HOLE_MARGIN = 15 / 4;
-    private readonly CHANNEL_HEIGHT = 12 / 4;
+    // IC starting columns (for wire terminal calculation)
+    private icStartColumns: Map<string, number> = new Map();
+    
+    // Board geometry instance
+    private boardGeometry: BreadboardGeometry | null = null;
 
     generate(program: ParsedProgram): CircuitIR {
         const ir: CircuitIR = {
@@ -347,6 +346,8 @@ class IRGenerator {
         this.componentPositions.clear();
         this.componentSizes.clear();
         this.symbols.clear();
+        this.icStartColumns.clear();
+        this.boardGeometry = null;
 
         for (const comp of program.components) {
             this.symbols.set(comp.id, { kind: 'component', type: comp.type });
@@ -387,18 +388,13 @@ class IRGenerator {
     }
 
     private markICPinHoles(ir: CircuitIR): void {
+        if (!this.boardGeometry) return;
+        
         // For each IC, mark the holes where its pins are inserted
         for (const comp of ir.components) {
-            const pinCount = comp.pinCount;
-            const pinsPerSide = pinCount / 2;
-            
-            // Get the column where this IC starts
-            const pos = this.componentPositions.get(comp.id);
-            if (!pos) continue;
-            
-            // Calculate starting column from position
-            const holeMargin = 18 / 4;
-            const startCol = Math.round((pos.x + 1 - holeMargin) / this.HOLE_SPACING) + 1;
+            const pinsPerSide = comp.pinCount / 2;
+            const startCol = this.icStartColumns.get(comp.id);
+            if (startCol === undefined) continue;
             
             // Top pins (1 to pinsPerSide) go into row E
             for (let i = 0; i < pinsPerSide; i++) {
@@ -415,17 +411,19 @@ class IRGenerator {
     }
 
     private generateBoard(board: BoardDecl): BoardIR {
-        const w = this.HOLE_MARGIN * 2 + this.NUM_COLS * this.HOLE_SPACING;
-        const h = this.RAIL_HEIGHT + this.HOLE_MARGIN + this.ROWS_PER_HALF * this.HOLE_SPACING + 
-                  this.CHANNEL_HEIGHT + this.ROWS_PER_HALF * this.HOLE_SPACING + this.HOLE_MARGIN + this.RAIL_HEIGHT;
+        // Create geometry instance at origin
+        this.boardGeometry = new BreadboardGeometry(0, 0);
         
         return {
             id: board.id,
             type: board.type,
-            rows: this.NUM_COLS,
+            rows: BreadboardGeometry.NUM_COLS,
             columns: 10,
             position: { x: 0, y: 0 },
-            size: { width: w, height: h }
+            size: { 
+                width: BreadboardGeometry.BOARD_WIDTH, 
+                height: BreadboardGeometry.BOARD_HEIGHT 
+            }
         };
     }
 
@@ -434,7 +432,7 @@ class IRGenerator {
         const pinsPerSide = pinCount / 2;
         
         // Horizontal IC: width spans pins, height is body
-        const width = (pinsPerSide - 1) * this.HOLE_SPACING + 2;
+        const width = (pinsPerSide - 1) * BreadboardGeometry.HOLE_SPACING + 2;
         const height = 7; // IC body height in base units
         
         this.componentSizes.set(comp.id, { width, height });
@@ -455,7 +453,7 @@ class IRGenerator {
             this.componentPositions.set(board.id, board.position);
         }
 
-        if (ir.boards.length === 0) {
+        if (ir.boards.length === 0 || !this.boardGeometry) {
             // No board, just lay out components in a row
             let currentX = 10;
             for (const comp of ir.components) {
@@ -467,72 +465,29 @@ class IRGenerator {
             return;
         }
 
-        // Place ICs on breadboard straddling the center channel
-        // ICs pins must snap exactly to breadboard holes
-        const board = ir.boards[0];
-        const boardX = board.position.x;
-        const boardY = board.position.y;
-        
-        // Breadboard geometry (must match renderer)
-        const railHeight = 24 / 4; // Convert from renderer scale
-        const holeMargin = 18 / 4;
-        
-        // Calculate exact hole positions
-        const holesStartX = boardX + holeMargin;
-        const topHalfY = boardY + railHeight + holeMargin;
-        
-        // Row E (index 4)
-        const rowEY = topHalfY + 4 * this.HOLE_SPACING;
-        
-        // Pin tip is at body_y - pinLength (in base units)
-        // For pin tip to land on rowEY: body_y - pinLength = rowEY => body_y = rowEY + pinLength
-        const pinLength = 1.5; // base units (6px / 4)
-        
-        // Position IC so top pins land exactly on row E
-        const icBodyY = rowEY + pinLength;
-        
-        let startCol = 2; // Start at column 3 (0-indexed = 2)
+        // Place ICs on breadboard using unified geometry
+        let startCol = 3; // Start at column 3 (1-indexed)
+        const pinLength = 1.5; // base units
         
         for (const comp of ir.components) {
             const pinsPerSide = comp.pinCount / 2;
             
-            // Position IC so first pin (pin 1) aligns exactly with hole at startCol
-            // Pin x = body_x + 1 (in base units), should equal holesStartX + startCol * HOLE_SPACING
-            const icX = holesStartX + startCol * this.HOLE_SPACING - 1;
+            // Get IC body position from geometry (ensures pin alignment)
+            const bodyPos = this.boardGeometry.getICBodyPosition(startCol, pinLength);
             
-            comp.position = { x: icX, y: icBodyY };
-            this.componentPositions.set(comp.id, { x: icX, y: icBodyY });
+            comp.position = { x: bodyPos.x, y: bodyPos.y };
+            this.componentPositions.set(comp.id, comp.position);
+            this.icStartColumns.set(comp.id, startCol);
             
             // Next IC starts after this one plus gap
             startCol += pinsPerSide + 2;
         }
     }
 
-    private getBoardHolePosition(boardId: string, col: number, row: string): Position {
-        const boardPos = this.componentPositions.get(boardId);
-        if (!boardPos) return { x: 0, y: 0 };
-        
-        // Use same constants as layoutComponents
-        const railHeight = 24 / 4;
-        const holeMargin = 18 / 4;
-        const channelHeight = 14 / 4;
-        
-        const holesStartX = boardPos.x + holeMargin;
-        const topHalfY = boardPos.y + railHeight + holeMargin;
-        const bottomHalfY = topHalfY + 5 * this.HOLE_SPACING + channelHeight;
-        
-        const rowMap: Record<string, number> = {
-            'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4,
-            'F': 0, 'G': 1, 'H': 2, 'I': 3, 'J': 4
-        };
-        
-        const rowIndex = rowMap[row] ?? 0;
-        const isTopHalf = row <= 'E';
-        
-        return {
-            x: holesStartX + (col - 1) * this.HOLE_SPACING,
-            y: isTopHalf ? topHalfY + rowIndex * this.HOLE_SPACING : bottomHalfY + rowIndex * this.HOLE_SPACING
-        };
+    private getBoardHolePosition(col: number, row: string): Position {
+        if (!this.boardGeometry) return { x: 0, y: 0 };
+        const hole = this.boardGeometry.getHolePosition(col, row);
+        return { x: hole.x, y: hole.y };
     }
 
     // Find the next free hole in the same column (shorted together on breadboard)
@@ -541,7 +496,8 @@ class IRGenerator {
         const topRows = ['D', 'C', 'B', 'A']; // E is occupied by IC pin
         const bottomRows = ['G', 'H', 'I', 'J']; // F is occupied by IC pin
         
-        const rows = preferredRow <= 'E' ? topRows : bottomRows;
+        const isTopHalf = this.boardGeometry?.isTopHalf(preferredRow) ?? (preferredRow <= 'E');
+        const rows = isTopHalf ? topRows : bottomRows;
         
         for (const row of rows) {
             const key = `${col},${row}`;
@@ -557,39 +513,36 @@ class IRGenerator {
 
     // Get wire terminal position - connects to a free hole in the same column
     private getWireTerminalPosition(componentId: string, pinNumber: number, wireId: string): Position {
-        const pos = this.componentPositions.get(componentId);
-        if (!pos) return { x: 0, y: 0 };
-
         const symbol = this.symbols.get(componentId);
-        if (!symbol) return pos;
+        if (!symbol) return { x: 0, y: 0 };
 
         if (symbol.kind === 'board') {
-            const col = ((pinNumber - 1) % this.NUM_COLS) + 1;
-            const preferredRow = pinNumber <= this.NUM_COLS ? 'D' : 'G';
+            const col = ((pinNumber - 1) % BreadboardGeometry.NUM_COLS) + 1;
+            const preferredRow = pinNumber <= BreadboardGeometry.NUM_COLS ? 'D' : 'G';
             const row = this.findFreeHoleInColumn(col, preferredRow, wireId);
-            return this.getBoardHolePosition(componentId, col, row);
+            return this.getBoardHolePosition(col, row);
         }
 
         // For IC pins, find a free hole in the same column
         const pinCount = BUILTIN_ICS[symbol.type] || 14;
         const pinsPerSide = pinCount / 2;
         
-        // Calculate column for this pin
-        const holeMargin = 18 / 4;
-        const startCol = Math.round((pos.x + 1 - holeMargin) / this.HOLE_SPACING) + 1;
+        // Get the starting column for this IC
+        const startCol = this.icStartColumns.get(componentId);
+        if (startCol === undefined) return { x: 0, y: 0 };
         
         if (pinNumber <= pinsPerSide) {
-            // Top pin
+            // Top pin (pins 1 to N/2)
             const pinIndex = pinNumber - 1;
             const col = startCol + pinIndex;
             const row = this.findFreeHoleInColumn(col, 'D', wireId);
-            return this.getBoardHolePosition('B1', col, row); // Assuming B1 is the board
+            return this.getBoardHolePosition(col, row);
         } else {
-            // Bottom pin
+            // Bottom pin (pins N to N/2+1, numbered right to left)
             const pinIndex = pinCount - pinNumber;
             const col = startCol + pinIndex;
             const row = this.findFreeHoleInColumn(col, 'G', wireId);
-            return this.getBoardHolePosition('B1', col, row);
+            return this.getBoardHolePosition(col, row);
         }
     }
 
