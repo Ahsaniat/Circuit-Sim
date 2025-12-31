@@ -1,0 +1,16 @@
+@comp A1 7408
+@comp O1 7432
+@board B1 breadboard_830
+
+def MyIC (
+    pin1 -> input,
+    pin2 -> input,
+    pin3 -> output,
+    pin4 -> gnd
+)
+
+map (
+    (A1 pin 3 -> O1 pin 1, B1 pin 5)
+    (A1 pin 6 -> O1 pin 2)
+    (O1 pin 3 -> B1 pin 10)
+)

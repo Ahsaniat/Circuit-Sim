@@ -1,0 +1,256 @@
+#include "ir_generator.h"
+#include <cmath>
+
+namespace circuitsim {
+
+// Standard DIP IC dimensions (in mm, scaled for rendering)
+static const float PIN_SPACING = 2.54f;  // 0.1 inch standard
+static const float DIP_WIDTH = 7.62f;    // 0.3 inch standard
+
+IRGenerator::IRGenerator(const SymbolTable& symbolTable, ErrorReporter& errorReporter)
+    : symbolTable_(symbolTable)
+    , errorReporter_(errorReporter) {
+    initLayouts();
+}
+
+void IRGenerator::initLayouts() {
+    // Standard DIP IC layouts
+    auto makeDIP = [](int pins) -> ICLayout {
+        int pinsPerSide = pins / 2;
+        return {
+            pins,
+            DIP_WIDTH,
+            pinsPerSide * PIN_SPACING,
+            PIN_SPACING
+        };
+    };
+    
+    icLayouts_["8"] = makeDIP(8);
+    icLayouts_["14"] = makeDIP(14);
+    icLayouts_["16"] = makeDIP(16);
+    icLayouts_["20"] = makeDIP(20);
+    icLayouts_["24"] = makeDIP(24);
+    
+    // Board layouts
+    boardLayouts_["breadboard_830"] = {63, 10, 165.0f, 55.0f, PIN_SPACING};
+    boardLayouts_["breadboard_400"] = {30, 10, 82.0f, 55.0f, PIN_SPACING};
+    boardLayouts_["breadboard_170"] = {17, 10, 46.0f, 35.0f, PIN_SPACING};
+}
+
+ICLayout IRGenerator::getICLayout(const std::string& type) {
+    // Get pin count from builtin or custom IC
+    int pinCount = 14; // default
+    
+    // Check symbol table for custom IC
+    auto ic = symbolTable_.lookupICTemplate(type);
+    if (ic) {
+        pinCount = ic->pinCount;
+    } else {
+        // Known IC types
+        static const std::unordered_map<std::string, int> knownICs = {
+            {"7400", 14}, {"7402", 14}, {"7404", 14}, {"7408", 14},
+            {"7410", 14}, {"7420", 14}, {"7432", 14}, {"7486", 14},
+            {"7447", 16}, {"7474", 14}, {"7490", 14},
+            {"74138", 16}, {"74139", 16}, {"74151", 16}, {"74153", 16},
+            {"74161", 16}, {"74164", 14}, {"74173", 16}, {"74181", 24},
+            {"74245", 20}, {"74373", 20}, {"74374", 20},
+            {"555", 8}, {"NE555", 8},
+            {"741", 8}, {"LM741", 8}, {"LM358", 8}
+        };
+        
+        auto it = knownICs.find(type);
+        if (it != knownICs.end()) {
+            pinCount = it->second;
+        }
+    }
+    
+    std::string key = std::to_string(pinCount);
+    auto it = icLayouts_.find(key);
+    if (it != icLayouts_.end()) {
+        return it->second;
+    }
+    
+    // Generate layout for unknown pin count
+    int pinsPerSide = pinCount / 2;
+    return {pinCount, DIP_WIDTH, pinsPerSide * PIN_SPACING, PIN_SPACING};
+}
+
+BoardLayout IRGenerator::getBoardLayout(const std::string& type) {
+    auto it = boardLayouts_.find(type);
+    if (it != boardLayouts_.end()) {
+        return it->second;
+    }
+    
+    // Default breadboard
+    return boardLayouts_["breadboard_830"];
+}
+
+CircuitIR IRGenerator::generate(const ProgramNode& program) {
+    CircuitIR ir;
+    
+    // Generate boards first (they define the workspace)
+    for (const auto& board : program.boards) {
+        ir.boards.push_back(generateBoard(*board));
+    }
+    
+    // Generate components
+    for (const auto& comp : program.components) {
+        ir.components.push_back(generateComponent(*comp));
+    }
+    
+    // Layout components on the circuit
+    layoutComponents(ir);
+    
+    // Generate wires from map block
+    if (program.mapBlock) {
+        ir.wires = generateWires(*program.mapBlock);
+    }
+    
+    // Calculate total dimensions
+    float maxX = 0, maxY = 0;
+    for (const auto& b : ir.boards) {
+        maxX = std::max(maxX, b.position.x + b.width);
+        maxY = std::max(maxY, b.position.y + b.height);
+    }
+    for (const auto& c : ir.components) {
+        maxX = std::max(maxX, c.position.x + c.width);
+        maxY = std::max(maxY, c.position.y + c.height);
+    }
+    
+    ir.totalWidth = maxX + 20.0f;  // padding
+    ir.totalHeight = maxY + 20.0f;
+    
+    return ir;
+}
+
+ComponentIR IRGenerator::generateComponent(const CompDeclNode& node) {
+    ICLayout layout = getICLayout(node.componentType);
+    
+    ComponentIR comp(node.identifier, node.componentType, layout.pinCount);
+    comp.width = layout.width;
+    comp.height = layout.height;
+    
+    return comp;
+}
+
+BoardIR IRGenerator::generateBoard(const BoardDeclNode& node) {
+    BoardLayout layout = getBoardLayout(node.boardType);
+    
+    BoardIR board(node.identifier, node.boardType);
+    board.rows = layout.rows;
+    board.columns = layout.columns;
+    board.width = layout.width;
+    board.height = layout.height;
+    
+    return board;
+}
+
+void IRGenerator::layoutComponents(CircuitIR& ir) {
+    float currentX = 10.0f;
+    float currentY = 10.0f;
+    float maxHeight = 0;
+    
+    // Place boards first
+    for (auto& board : ir.boards) {
+        board.position = Position(currentX, currentY);
+        componentPositions_[board.id] = board.position;
+        currentY += board.height + 20.0f;
+        maxHeight = std::max(maxHeight, board.height);
+    }
+    
+    // Place ICs in a row below boards (or on board if breadboard exists)
+    float icStartY = currentY;
+    currentX = 10.0f;
+    
+    if (!ir.boards.empty()) {
+        // Place ICs on the breadboard
+        auto& board = ir.boards[0];
+        currentX = board.position.x + 20.0f;
+        icStartY = board.position.y + 10.0f;
+    }
+    
+    for (auto& comp : ir.components) {
+        comp.position = Position(currentX, icStartY);
+        componentPositions_[comp.id] = comp.position;
+        currentX += comp.width + 15.0f;
+    }
+}
+
+Position IRGenerator::getPinPosition(const std::string& componentId, int pinNumber) {
+    auto it = componentPositions_.find(componentId);
+    if (it == componentPositions_.end()) {
+        return Position(0, 0);
+    }
+    
+    Position compPos = it->second;
+    
+    // Check if it's a board
+    auto symbol = symbolTable_.lookupSymbol(componentId);
+    if (symbol && symbol->kind == SymbolKind::BOARD) {
+        // Board pin positions: row-major layout
+        BoardLayout layout = getBoardLayout(symbol->typeId);
+        int row = (pinNumber - 1) / layout.columns;
+        int col = (pinNumber - 1) % layout.columns;
+        
+        return Position(
+            compPos.x + col * layout.holeSpacing + 5.0f,
+            compPos.y + row * layout.holeSpacing + 5.0f
+        );
+    }
+    
+    // IC pin positions: DIP layout
+    // Pins 1-N/2 on left side (top to bottom)
+    // Pins N/2+1 to N on right side (bottom to top)
+    ICLayout layout = getICLayout(symbol ? symbol->typeId : "");
+    int pinsPerSide = layout.pinCount / 2;
+    
+    float x, y;
+    if (pinNumber <= pinsPerSide) {
+        // Left side
+        x = compPos.x;
+        y = compPos.y + (pinNumber - 1) * layout.pinSpacing;
+    } else {
+        // Right side
+        x = compPos.x + layout.width;
+        y = compPos.y + (layout.pinCount - pinNumber) * layout.pinSpacing;
+    }
+    
+    return Position(x, y);
+}
+
+std::vector<Wire> IRGenerator::generateWires(const MapBlockNode& mapBlock) {
+    std::vector<Wire> wires;
+    
+    // Wire colors for visual distinction
+    static const std::vector<std::string> colors = {
+        "#E63946", "#457B9D", "#2A9D8F", "#E9C46A", 
+        "#F4A261", "#264653", "#A8DADC", "#1D3557"
+    };
+    size_t colorIndex = 0;
+    
+    for (const auto& conn : mapBlock.connections) {
+        if (!conn->source) continue;
+        
+        Position fromPos = getPinPosition(conn->source->componentId, conn->source->pinNumber);
+        PinPosition from(conn->source->componentId, conn->source->pinNumber, fromPos);
+        
+        std::string wireColor = colors[colorIndex % colors.size()];
+        
+        for (const auto& dest : conn->destinations) {
+            if (!dest) continue;
+            
+            Position toPos = getPinPosition(dest->componentId, dest->pinNumber);
+            PinPosition to(dest->componentId, dest->pinNumber, toPos);
+            
+            Wire wire(from, to);
+            wire.color = wireColor;
+            wires.push_back(wire);
+        }
+        
+        colorIndex++;
+    }
+    
+    return wires;
+}
+
+} // namespace circuitsim
