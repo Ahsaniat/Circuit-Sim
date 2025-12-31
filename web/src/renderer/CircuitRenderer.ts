@@ -1,5 +1,6 @@
 import { CircuitIR, ComponentIR, BoardIR, Wire, Position } from '../types';
 import { BreadboardGeometry } from '../geometry/BreadboardGeometry';
+import { getComponentFootprint } from '../geometry/ComponentFootprints';
 
 const BASE_SCALE = 4;  // Pixels per base unit
 const PADDING = 20;
@@ -383,26 +384,27 @@ export class CircuitRenderer {
     }
     
     /**
-     * Get component dimensions based on category
+     * Get component dimensions based on category using the unified footprint system
      */
     private getComponentDimensions(comp: ComponentIR): { width: number; height: number; pinLength: number } {
         const category = comp.category || 'ic';
+        const footprint = getComponentFootprint(category, comp.pinCount, comp.type);
         
-        switch (category) {
-            case 'passive':  // Resistors, capacitors, inductors
-                return { width: 6, height: 2.5, pinLength: 2 };
-            case 'diode':    // Diodes
-                return { width: 5, height: 2, pinLength: 2 };
-            case 'led':      // LEDs
-                return { width: 3, height: 3, pinLength: 2 };
-            case 'sensor':   // LDR, photodiode
-                return { width: 4, height: 4, pinLength: 2 };
-            case 'transistor': // BJT, MOSFET
-                return { width: 3, height: 4, pinLength: 2 };
-            case 'ic':
-            default:
-                return this.getICDimensions(comp.pinCount);
+        // Calculate pin length from footprint
+        let pinLength = IC_PIN_LENGTH;
+        if (footprint.pins.length > 0) {
+            const pin = footprint.pins[0];
+            // For vertical components, pin extends below body
+            if (footprint.orientation === 'vertical') {
+                pinLength = Math.abs(pin.offsetY - footprint.bodyHeight);
+            }
         }
+        
+        return { 
+            width: footprint.bodyWidth, 
+            height: footprint.bodyHeight, 
+            pinLength 
+        };
     }
     
     /**
