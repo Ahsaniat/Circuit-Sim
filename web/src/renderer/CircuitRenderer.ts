@@ -305,6 +305,9 @@ export class CircuitRenderer {
                     const wire = this.circuitIR.wires[wireIndex];
                     
                     if (wire && snapMgr) {
+                        // Clear waypoints when dragging terminals - manual drag removes routing
+                        wire.waypoints = undefined;
+                        
                         // Snap the terminal position to nearest hole
                         const snapResult = snapMgr.snapPosition(pos);
                         this.isSnapped = snapResult.snapped;
@@ -374,6 +377,9 @@ export class CircuitRenderer {
                     // Move entire wire independently with SNAP on both terminals
                     const wire = this.circuitIR.wires[dragged.wireIndex];
                     if (wire && snapMgr) {
+                        // Clear waypoints during manual drag - waypoints are for compile-time routing only
+                        wire.waypoints = undefined;
+                        
                         // Calculate new positions for both terminals
                         const dx = newBaseX - wire.from.x;
                         const dy = newBaseY - wire.from.y;
@@ -397,13 +403,6 @@ export class CircuitRenderer {
                             wire.to.x = newToPos.x;
                             wire.to.y = newToPos.y;
                             this.isSnapped = false;
-                        }
-                        
-                        if (wire.waypoints) {
-                            for (const wp of wire.waypoints) {
-                                wp.x += dx;
-                                wp.y += dy;
-                            }
                         }
                     }
                     this.snapPreviewHoles = [];
@@ -2098,9 +2097,9 @@ export class CircuitRenderer {
             this.ctx.stroke();
         }
 
-        // Main wire
+        // Main wire - increased thickness
         this.ctx.strokeStyle = wire.color;
-        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.lineWidth = 3.5 / this.zoom;  // Increased from 2 to 3.5
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
 
@@ -2116,13 +2115,13 @@ export class CircuitRenderer {
         this.ctx.lineTo(toX, toY);
         this.ctx.stroke();
 
-        // Connection dots
+        // Connection dots - made larger
         this.ctx.fillStyle = wire.color;
         this.ctx.beginPath();
-        this.ctx.arc(fromX, fromY, 3, 0, Math.PI * 2);
+        this.ctx.arc(fromX, fromY, 4, 0, Math.PI * 2);  // Increased from 3 to 4
         this.ctx.fill();
         this.ctx.beginPath();
-        this.ctx.arc(toX, toY, 3, 0, Math.PI * 2);
+        this.ctx.arc(toX, toY, 4, 0, Math.PI * 2);  // Increased from 3 to 4
         this.ctx.fill();
         
         // Selection indicators on terminals
