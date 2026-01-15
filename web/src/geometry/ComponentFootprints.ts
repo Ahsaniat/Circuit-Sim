@@ -12,7 +12,7 @@
 
 import { BreadboardGeometry } from './BreadboardGeometry';
 
-export type ComponentCategory = 'ic' | 'passive' | 'diode' | 'led' | 'sensor' | 'transistor';
+export type ComponentCategory = 'ic' | 'passive' | 'diode' | 'led' | 'sensor' | 'transistor' | 'switch' | 'display' | 'buzzer' | 'motor' | 'power' | 'crystal';
 
 export interface PinFootprint {
     /** Pin number (1-indexed) */
@@ -281,7 +281,7 @@ export function getComponentFootprint(category: ComponentCategory, pinCount: num
         case 'ic':
             return getICFootprint(pinCount);
         case 'passive':
-            return getPassiveFootprint(3);  // Default 3-column span
+            return getPassiveFootprint(3);
         case 'diode':
             return getDiodeFootprint(2);
         case 'led':
@@ -291,9 +291,215 @@ export function getComponentFootprint(category: ComponentCategory, pinCount: num
         case 'transistor':
             const isMOSFET = type === 'NMOS' || type === 'PMOS';
             return getTransistorFootprint(isMOSFET ? 'MOSFET' : 'BJT');
+        case 'switch':
+            return getSwitchFootprint(type || 'SPST');
+        case 'display':
+            return getDisplayFootprint(type || '7SEG');
+        case 'buzzer':
+            return getBuzzerFootprint();
+        case 'motor':
+            return getMotorFootprint(type || 'DC');
+        case 'power':
+            return getPowerFootprint(type || 'BATTERY');
+        case 'crystal':
+            return getCrystalFootprint();
         default:
             return getICFootprint(pinCount);
     }
+}
+
+/**
+ * Calculate footprint for switches (SPST, SPDT, pushbutton)
+ */
+export function getSwitchFootprint(type: string): ComponentFootprint {
+    const holeSpacing = BreadboardGeometry.HOLE_SPACING;
+    
+    if (type === 'SPST') {
+        return {
+            category: 'switch',
+            bodyWidth: 2 * holeSpacing,
+            bodyHeight: 3,
+            pins: [
+                { number: 1, offsetX: 0, offsetY: 1.5, targetRow: 'D', label: '1' },
+                { number: 2, offsetX: 2 * holeSpacing, offsetY: 1.5, targetRow: 'D', label: '2' }
+            ],
+            orientation: 'horizontal',
+            straddlesChannel: false
+        };
+    } else if (type === 'SPDT') {
+        return {
+            category: 'switch',
+            bodyWidth: 2 * holeSpacing,
+            bodyHeight: 4,
+            pins: [
+                { number: 1, offsetX: 0, offsetY: 4 + 2, targetRow: 'D', label: 'COM' },
+                { number: 2, offsetX: holeSpacing, offsetY: 4 + 2, targetRow: 'D', label: 'NC' },
+                { number: 3, offsetX: 2 * holeSpacing, offsetY: 4 + 2, targetRow: 'D', label: 'NO' }
+            ],
+            orientation: 'vertical',
+            straddlesChannel: false
+        };
+    } else {
+        return {
+            category: 'switch',
+            bodyWidth: holeSpacing,
+            bodyHeight: BreadboardGeometry.getICBodyHeight(1.5),
+            pins: [
+                { number: 1, offsetX: 0, offsetY: -1.5, targetRow: 'E', label: '1A' },
+                { number: 2, offsetX: holeSpacing, offsetY: -1.5, targetRow: 'E', label: '1B' },
+                { number: 3, offsetX: 0, offsetY: BreadboardGeometry.getICBodyHeight(1.5) + 1.5, targetRow: 'F', label: '2A' },
+                { number: 4, offsetX: holeSpacing, offsetY: BreadboardGeometry.getICBodyHeight(1.5) + 1.5, targetRow: 'F', label: '2B' }
+            ],
+            orientation: 'vertical',
+            straddlesChannel: true
+        };
+    }
+}
+
+/**
+ * Calculate footprint for displays (7-segment)
+ */
+export function getDisplayFootprint(_type: string): ComponentFootprint {
+    const holeSpacing = BreadboardGeometry.HOLE_SPACING;
+    const pinsPerSide = 5;
+    const bodyWidth = (pinsPerSide - 1) * holeSpacing + 2;
+    const pinLength = 1.5;
+    const bodyHeight = BreadboardGeometry.getICBodyHeight(pinLength);
+    const firstPinOffset = 1;
+    
+    const pins: PinFootprint[] = [];
+    for (let i = 0; i < pinsPerSide; i++) {
+        pins.push({
+            number: i + 1,
+            offsetX: firstPinOffset + i * holeSpacing,
+            offsetY: bodyHeight + pinLength,
+            targetRow: 'F',
+            label: `${i + 1}`
+        });
+        pins.push({
+            number: pinsPerSide + i + 1,
+            offsetX: firstPinOffset + i * holeSpacing,
+            offsetY: -pinLength,
+            targetRow: 'E',
+            label: `${pinsPerSide + i + 1}`
+        });
+    }
+    
+    return {
+        category: 'display',
+        bodyWidth,
+        bodyHeight,
+        pins,
+        orientation: 'horizontal',
+        straddlesChannel: true
+    };
+}
+
+/**
+ * Calculate footprint for buzzers
+ */
+export function getBuzzerFootprint(): ComponentFootprint {
+    const holeSpacing = BreadboardGeometry.HOLE_SPACING;
+    const bodySize = 6;
+    
+    return {
+        category: 'buzzer',
+        bodyWidth: bodySize,
+        bodyHeight: bodySize,
+        pins: [
+            { number: 1, offsetX: bodySize / 2 - holeSpacing / 2, offsetY: bodySize + 2, targetRow: 'D', label: '+' },
+            { number: 2, offsetX: bodySize / 2 + holeSpacing / 2, offsetY: bodySize + 2, targetRow: 'D', label: '-' }
+        ],
+        orientation: 'vertical',
+        straddlesChannel: false
+    };
+}
+
+/**
+ * Calculate footprint for motors (DC, servo)
+ */
+export function getMotorFootprint(type: string): ComponentFootprint {
+    const holeSpacing = BreadboardGeometry.HOLE_SPACING;
+    
+    if (type === 'SERVO') {
+        return {
+            category: 'motor',
+            bodyWidth: 2 * holeSpacing,
+            bodyHeight: 6,
+            pins: [
+                { number: 1, offsetX: 0, offsetY: 6 + 2, targetRow: 'D', label: 'GND' },
+                { number: 2, offsetX: holeSpacing, offsetY: 6 + 2, targetRow: 'D', label: 'VCC' },
+                { number: 3, offsetX: 2 * holeSpacing, offsetY: 6 + 2, targetRow: 'D', label: 'SIG' }
+            ],
+            orientation: 'vertical',
+            straddlesChannel: false
+        };
+    } else {
+        return {
+            category: 'motor',
+            bodyWidth: 2 * holeSpacing,
+            bodyHeight: 4,
+            pins: [
+                { number: 1, offsetX: 0, offsetY: 2, targetRow: 'D', label: '+' },
+                { number: 2, offsetX: 2 * holeSpacing, offsetY: 2, targetRow: 'D', label: '-' }
+            ],
+            orientation: 'horizontal',
+            straddlesChannel: false
+        };
+    }
+}
+
+/**
+ * Calculate footprint for power components (battery, regulator)
+ */
+export function getPowerFootprint(type: string): ComponentFootprint {
+    const holeSpacing = BreadboardGeometry.HOLE_SPACING;
+    
+    if (type === 'REGULATOR') {
+        return {
+            category: 'power',
+            bodyWidth: 2 * holeSpacing,
+            bodyHeight: 6,
+            pins: [
+                { number: 1, offsetX: 0, offsetY: 6 + 2, targetRow: 'D', label: 'IN' },
+                { number: 2, offsetX: holeSpacing, offsetY: 6 + 2, targetRow: 'D', label: 'GND' },
+                { number: 3, offsetX: 2 * holeSpacing, offsetY: 6 + 2, targetRow: 'D', label: 'OUT' }
+            ],
+            orientation: 'vertical',
+            straddlesChannel: false
+        };
+    } else {
+        return {
+            category: 'power',
+            bodyWidth: 4,
+            bodyHeight: 8,
+            pins: [
+                { number: 1, offsetX: 2 - holeSpacing / 2, offsetY: 8 + 2, targetRow: 'D', label: '+' },
+                { number: 2, offsetX: 2 + holeSpacing / 2, offsetY: 8 + 2, targetRow: 'D', label: '-' }
+            ],
+            orientation: 'vertical',
+            straddlesChannel: false
+        };
+    }
+}
+
+/**
+ * Calculate footprint for crystal oscillator
+ */
+export function getCrystalFootprint(): ComponentFootprint {
+    const holeSpacing = BreadboardGeometry.HOLE_SPACING;
+    
+    return {
+        category: 'crystal',
+        bodyWidth: holeSpacing,
+        bodyHeight: 3,
+        pins: [
+            { number: 1, offsetX: 0, offsetY: 1.5, targetRow: 'D', label: '1' },
+            { number: 2, offsetX: holeSpacing, offsetY: 1.5, targetRow: 'D', label: '2' }
+        ],
+        orientation: 'horizontal',
+        straddlesChannel: false
+    };
 }
 
 /**

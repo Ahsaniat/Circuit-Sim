@@ -116,6 +116,7 @@ export class SnapManager {
     /**
      * Find the nearest hole to a given position
      * Returns snap info including whether the position is within snap range
+     * Searches main rows (A-J) and power rail rows (TOP+, TOP-, BOTTOM+, BOTTOM-)
      */
     findNearestHole(pos: Position): SnapResult {
         let nearestHole: HolePosition | undefined;
@@ -123,6 +124,19 @@ export class SnapManager {
         
         // Check all main rows
         for (const row of BreadboardGeometry.ALL_ROWS) {
+            for (let col = 1; col <= BreadboardGeometry.NUM_COLS; col++) {
+                const hole = this.geometry.getHolePosition(col, row);
+                const distance = Math.sqrt((pos.x - hole.x) ** 2 + (pos.y - hole.y) ** 2);
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestHole = hole;
+                }
+            }
+        }
+        
+        // Check power rail rows
+        for (const row of BreadboardGeometry.RAIL_ROWS) {
             for (let col = 1; col <= BreadboardGeometry.NUM_COLS; col++) {
                 const hole = this.geometry.getHolePosition(col, row);
                 const distance = Math.sqrt((pos.x - hole.x) ** 2 + (pos.y - hole.y) ** 2);

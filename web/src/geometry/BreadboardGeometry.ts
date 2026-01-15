@@ -38,7 +38,9 @@ export class BreadboardGeometry {
     // Row definitions
     static readonly TOP_ROWS = ['A', 'B', 'C', 'D', 'E'];
     static readonly BOTTOM_ROWS = ['F', 'G', 'H', 'I', 'J'];
+    static readonly RAIL_ROWS = ['TOP+', 'TOP-', 'BOTTOM+', 'BOTTOM-'];
     static readonly ALL_ROWS = [...BreadboardGeometry.TOP_ROWS, ...BreadboardGeometry.BOTTOM_ROWS];
+    static readonly ALL_ROWS_WITH_RAILS = [...BreadboardGeometry.TOP_ROWS, ...BreadboardGeometry.BOTTOM_ROWS, ...BreadboardGeometry.RAIL_ROWS];
     
     private boardX: number;
     private boardY: number;
@@ -56,6 +58,11 @@ export class BreadboardGeometry {
         const topHalfStartY = this.boardY + BreadboardGeometry.RAIL_HEIGHT + 
             BreadboardGeometry.HOLE_MARGIN;
         
+        // Top power rail rows
+        const topRailY = this.boardY + 4;
+        this.rowYPositions.set('TOP+', topRailY + 8);
+        this.rowYPositions.set('TOP-', topRailY + BreadboardGeometry.RAIL_HEIGHT - 10);
+        
         // Top half rows (A-E)
         for (let i = 0; i < BreadboardGeometry.ROWS_PER_HALF; i++) {
             const row = BreadboardGeometry.TOP_ROWS[i];
@@ -71,6 +78,11 @@ export class BreadboardGeometry {
             const row = BreadboardGeometry.BOTTOM_ROWS[i];
             this.rowYPositions.set(row, bottomHalfStartY + i * BreadboardGeometry.HOLE_SPACING);
         }
+        
+        // Bottom power rail rows
+        const bottomRailY = this.boardY + BreadboardGeometry.BOARD_HEIGHT - BreadboardGeometry.RAIL_HEIGHT;
+        this.rowYPositions.set('BOTTOM+', bottomRailY + 10);
+        this.rowYPositions.set('BOTTOM-', bottomRailY + BreadboardGeometry.RAIL_HEIGHT - 8);
     }
     
     /**
@@ -101,6 +113,7 @@ export class BreadboardGeometry {
     
     /**
      * Get the row letter for a Y coordinate (returns empty string if not on a row)
+     * Includes main rows (A-J) and power rail rows (TOP+, TOP-, BOTTOM+, BOTTOM-)
      */
     getRowAtY(y: number): string {
         for (const [row, rowY] of this.rowYPositions) {

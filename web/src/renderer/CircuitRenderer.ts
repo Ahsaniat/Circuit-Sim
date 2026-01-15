@@ -760,12 +760,14 @@ export class CircuitRenderer {
         // Render snap preview highlights (before components, so they appear behind)
         this.renderSnapPreview();
         
-        for (const comp of this.circuitIR.components) {
-            this.renderComponent(comp);
-        }
-        
+        // Render wires BEFORE components (so wires appear under components)
         for (let i = 0; i < this.circuitIR.wires.length; i++) {
             this.renderWire(this.circuitIR.wires[i], i);
+        }
+        
+        // Render components on top of wires
+        for (const comp of this.circuitIR.components) {
+            this.renderComponent(comp);
         }
         
         this.ctx.restore();
@@ -948,6 +950,24 @@ export class CircuitRenderer {
                 break;
             case 'transistor':
                 this.renderTransistor(comp);
+                break;
+            case 'switch':
+                this.renderSwitch(comp);
+                break;
+            case 'display':
+                this.renderDisplay(comp);
+                break;
+            case 'buzzer':
+                this.renderBuzzer(comp);
+                break;
+            case 'motor':
+                this.renderMotor(comp);
+                break;
+            case 'power':
+                this.renderPower(comp);
+                break;
+            case 'crystal':
+                this.renderCrystal(comp);
                 break;
             case 'ic':
             default:
@@ -1529,6 +1549,526 @@ export class CircuitRenderer {
         return `rgb(${Math.floor(r * factor)}, ${Math.floor(g * factor)}, ${Math.floor(b * factor)})`;
     }
 
+    private renderSwitch(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
+        
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        if (comp.type === 'PUSHBUTTON') {
+            const centerX = x + w / 2;
+            const centerY = y + h / 2;
+            const pinY = y + h + 1.5 * S;
+            
+            this.ctx.fillStyle = '#333';
+            this.roundRect(x, y, w, h, 2);
+            this.ctx.fill();
+            
+            this.ctx.fillStyle = '#c44';
+            this.ctx.beginPath();
+            this.ctx.arc(centerX, centerY, Math.min(w, h) * 0.3, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = '#888';
+            this.ctx.lineWidth = 2 / this.zoom;
+            for (let i = 0; i < 2; i++) {
+                const px = x + i * holeSpacing;
+                this.ctx.beginPath();
+                this.ctx.moveTo(px, y);
+                this.ctx.lineTo(px, y - 1.5 * S);
+                this.ctx.stroke();
+                this.ctx.beginPath();
+                this.ctx.moveTo(px, y + h);
+                this.ctx.lineTo(px, pinY);
+                this.ctx.stroke();
+                
+                this.ctx.fillStyle = '#888';
+                this.ctx.beginPath();
+                this.ctx.arc(px, y - 1.5 * S, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.beginPath();
+                this.ctx.arc(px, pinY, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+        } else {
+            const centerY = y + h / 2;
+            
+            this.ctx.fillStyle = '#555';
+            this.roundRect(x + w * 0.1, y, w * 0.8, h, 2);
+            this.ctx.fill();
+            
+            this.ctx.fillStyle = '#ddd';
+            this.roundRect(x + w * 0.4, y - 2, w * 0.2, h + 4, 1);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = '#888';
+            this.ctx.lineWidth = 2 / this.zoom;
+            
+            if (comp.type === 'SPST') {
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, centerY);
+                this.ctx.lineTo(x + w, centerY);
+                this.ctx.stroke();
+                
+                this.ctx.fillStyle = '#888';
+                this.ctx.beginPath();
+                this.ctx.arc(x, centerY, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.beginPath();
+                this.ctx.arc(x + w, centerY, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            } else {
+                const pinY = y + h + 2 * S;
+                for (let i = 0; i < 3; i++) {
+                    const px = x + i * holeSpacing;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(px, y + h);
+                    this.ctx.lineTo(px, pinY);
+                    this.ctx.stroke();
+                    
+                    this.ctx.fillStyle = '#888';
+                    this.ctx.beginPath();
+                    this.ctx.arc(px, pinY, 2, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+            }
+        }
+        
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, x + w / 2, y + h + (comp.type === 'SPST' ? 4 : 14));
+    }
+    
+    private renderDisplay(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const pinsPerSide = comp.pinCount / 2;
+        const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
+        const { width, height, pinLength } = this.getICDimensions(comp.pinCount);
+        const w = width * S;
+        const h = height * S;
+        const pinLengthPx = pinLength * S;
+        const firstPinOffset = 1 * S;
+        
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - 4, y - pinLengthPx - 4, w + 8, h + pinLengthPx * 2 + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        this.ctx.fillStyle = '#1a1a1a';
+        this.ctx.strokeStyle = '#000';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.roundRect(x, y, w, h, 3);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        const segH = h * 0.45;
+        const segW = w * 0.3;
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        
+        this.ctx.strokeStyle = '#300';
+        this.ctx.lineWidth = 3 / this.zoom;
+        this.ctx.lineCap = 'butt';
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx - segW / 2, cy - segH);
+        this.ctx.lineTo(cx + segW / 2, cy - segH);
+        this.ctx.stroke();
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx - segW / 2, cy);
+        this.ctx.lineTo(cx + segW / 2, cy);
+        this.ctx.stroke();
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx - segW / 2, cy + segH);
+        this.ctx.lineTo(cx + segW / 2, cy + segH);
+        this.ctx.stroke();
+        
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.fillStyle = '#888';
+        for (let i = 0; i < pinsPerSide; i++) {
+            const px = x + firstPinOffset + i * holeSpacing;
+            this.ctx.fillRect(px - 1.5, y + h, 3, pinLengthPx);
+            this.ctx.beginPath();
+            this.ctx.arc(px, y + h + pinLengthPx, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            this.ctx.fillRect(px - 1.5, y - pinLengthPx, 3, pinLengthPx);
+            this.ctx.beginPath();
+            this.ctx.arc(px, y - pinLengthPx, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, x + w / 2, y + h + pinLengthPx + 4);
+    }
+    
+    private renderBuzzer(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
+        
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.beginPath();
+            this.ctx.arc(x + w / 2, y + h / 2, Math.max(w, h) / 2 + 4, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        const centerX = x + w / 2;
+        const centerY = y + h / 2;
+        const radius = Math.min(w, h) / 2;
+        const pinY = y + h + 2 * S;
+        const pin1X = centerX - holeSpacing / 2;
+        const pin2X = centerX + holeSpacing / 2;
+        
+        this.ctx.fillStyle = '#222';
+        this.ctx.beginPath();
+        this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.strokeStyle = '#444';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.stroke();
+        
+        this.ctx.fillStyle = '#666';
+        this.ctx.beginPath();
+        this.ctx.arc(centerX, centerY, radius * 0.6, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        if (comp.type !== 'PASSIVE_BUZZER') {
+            this.ctx.fillStyle = '#c44';
+            this.ctx.font = `bold ${8 / this.zoom}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('+', centerX, centerY);
+        }
+        
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.moveTo(pin1X, y + h);
+        this.ctx.lineTo(pin1X, pinY);
+        this.ctx.moveTo(pin2X, y + h);
+        this.ctx.lineTo(pin2X, pinY);
+        this.ctx.stroke();
+        
+        this.ctx.fillStyle = '#888';
+        this.ctx.beginPath();
+        this.ctx.arc(pin1X, pinY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.arc(pin2X, pinY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, centerX, pinY + 4);
+    }
+    
+    private renderMotor(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
+        
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        if (comp.type === 'SERVO') {
+            const pinY = y + h + 2 * S;
+            
+            this.ctx.fillStyle = '#444';
+            this.roundRect(x, y, w, h, 2);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = '#666';
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.stroke();
+            
+            this.ctx.fillStyle = '#ccc';
+            this.roundRect(x + w * 0.3, y - 2, w * 0.4, 4, 1);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = '#888';
+            this.ctx.lineWidth = 2 / this.zoom;
+            for (let i = 0; i < 3; i++) {
+                const px = x + i * holeSpacing;
+                this.ctx.beginPath();
+                this.ctx.moveTo(px, y + h);
+                this.ctx.lineTo(px, pinY);
+                this.ctx.stroke();
+                
+                this.ctx.fillStyle = '#888';
+                this.ctx.beginPath();
+                this.ctx.arc(px, pinY, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            this.ctx.fillStyle = '#999';
+            this.ctx.font = `${7 / this.zoom}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('SERVO', x + w / 2, y + h / 2);
+        } else {
+            const centerY = y + h / 2;
+            
+            this.ctx.fillStyle = '#555';
+            this.ctx.beginPath();
+            this.ctx.ellipse(x + w / 2, centerY, w * 0.4, h / 2, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = '#333';
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.stroke();
+            
+            this.ctx.fillStyle = '#888';
+            this.ctx.beginPath();
+            this.ctx.arc(x + w / 2, centerY, h * 0.2, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            this.ctx.fillStyle = '#aaa';
+            this.ctx.fillRect(x + w - 6, centerY - 1, 6, 2);
+            
+            this.ctx.strokeStyle = '#888';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, centerY);
+            this.ctx.lineTo(x + w * 0.2, centerY);
+            this.ctx.moveTo(x + w, centerY);
+            this.ctx.lineTo(x + w * 0.8, centerY);
+            this.ctx.stroke();
+            
+            this.ctx.fillStyle = '#888';
+            this.ctx.beginPath();
+            this.ctx.arc(x, centerY, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.beginPath();
+            this.ctx.arc(x + w, centerY, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, x + w / 2, y + h + (comp.type === 'SERVO' ? 14 : 4));
+    }
+    
+    private renderPower(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
+        
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        if (comp.type === 'REGULATOR') {
+            const pinY = y + h + 2 * S;
+            
+            this.ctx.fillStyle = '#1a1a1a';
+            this.roundRect(x, y, w, h, 2);
+            this.ctx.fill();
+            
+            this.ctx.fillStyle = '#444';
+            this.roundRect(x, y, w, h * 0.3, 2);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = '#666';
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.roundRect(x, y, w, h, 2);
+            this.ctx.stroke();
+            
+            this.ctx.strokeStyle = '#888';
+            this.ctx.lineWidth = 2 / this.zoom;
+            for (let i = 0; i < 3; i++) {
+                const px = x + i * holeSpacing;
+                this.ctx.beginPath();
+                this.ctx.moveTo(px, y + h);
+                this.ctx.lineTo(px, pinY);
+                this.ctx.stroke();
+                
+                this.ctx.fillStyle = '#888';
+                this.ctx.beginPath();
+                this.ctx.arc(px, pinY, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            this.ctx.fillStyle = '#999';
+            this.ctx.font = `${6 / this.zoom}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(comp.type, x + w / 2, y + h / 2);
+        } else {
+            const centerX = x + w / 2;
+            const pinY = y + h + 2 * S;
+            const pin1X = centerX - holeSpacing / 2;
+            const pin2X = centerX + holeSpacing / 2;
+            
+            this.ctx.fillStyle = '#333';
+            this.roundRect(x, y, w, h * 0.7, 2);
+            this.ctx.fill();
+            
+            this.ctx.fillStyle = '#666';
+            this.roundRect(x, y + h * 0.7, w, h * 0.3, 0);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = '#555';
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.roundRect(x, y, w, h, 2);
+            this.ctx.stroke();
+            
+            this.ctx.fillStyle = '#c44';
+            this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'top';
+            this.ctx.fillText('+', centerX, y + 2);
+            
+            this.ctx.fillStyle = '#44c';
+            this.ctx.fillText('−', centerX, y + h * 0.7 - 8);
+            
+            this.ctx.strokeStyle = '#888';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.beginPath();
+            this.ctx.moveTo(pin1X, y + h);
+            this.ctx.lineTo(pin1X, pinY);
+            this.ctx.moveTo(pin2X, y + h);
+            this.ctx.lineTo(pin2X, pinY);
+            this.ctx.stroke();
+            
+            this.ctx.fillStyle = '#888';
+            this.ctx.beginPath();
+            this.ctx.arc(pin1X, pinY, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.beginPath();
+            this.ctx.arc(pin2X, pinY, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(comp.id, x + w / 2, y + h + (comp.type === 'REGULATOR' ? 14 : 10));
+    }
+    
+    private renderCrystal(comp: ComponentIR): void {
+        const S = BASE_SCALE;
+        const x = comp.position.x * S;
+        const y = comp.position.y * S;
+        const { width, height } = this.getComponentDimensions(comp);
+        const w = width * S;
+        const h = height * S;
+        
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = '#0066cc';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        const centerY = y + h / 2;
+        
+        this.ctx.fillStyle = '#888';
+        this.ctx.strokeStyle = '#666';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.ellipse(x + w / 2, centerY, w * 0.4, h / 2, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        this.ctx.strokeStyle = '#555';
+        this.ctx.lineWidth = 0.5 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + w * 0.3, y);
+        this.ctx.lineTo(x + w * 0.3, y + h);
+        this.ctx.moveTo(x + w * 0.7, y);
+        this.ctx.lineTo(x + w * 0.7, y + h);
+        this.ctx.stroke();
+        
+        this.ctx.strokeStyle = '#888';
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, centerY);
+        this.ctx.lineTo(x + w * 0.2, centerY);
+        this.ctx.moveTo(x + w, centerY);
+        this.ctx.lineTo(x + w * 0.8, centerY);
+        this.ctx.stroke();
+        
+        this.ctx.fillStyle = '#888';
+        this.ctx.beginPath();
+        this.ctx.arc(x, centerY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.arc(x + w, centerY, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.fillStyle = '#666';
+        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        if (comp.value) {
+            this.ctx.fillText(`${comp.id} ${comp.value}`, x + w / 2, y + h + 4);
+        } else {
+            this.ctx.fillText(comp.id, x + w / 2, y + h + 4);
+        }
+    }
+
     private renderWire(wire: Wire, wireIndex?: number): void {
         const S = BASE_SCALE;
         const fromX = wire.from.x * S;
@@ -1610,5 +2150,9 @@ export class CircuitRenderer {
         this.ctx.lineTo(x, y + r);
         this.ctx.quadraticCurveTo(x, y, x + r, y);
         this.ctx.closePath();
+    }
+
+    exportCanvas(callback: (blob: Blob | null) => void): void {
+        this.canvas.toBlob(callback, 'image/png', 1.0);
     }
 }

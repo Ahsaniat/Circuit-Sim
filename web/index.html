@@ -112,6 +112,21 @@
         .btn-primary:hover {
             background: #0055aa;
         }
+        .btn-icon {
+            padding: 6px;
+            border: 1px solid #ccc;
+            background: #fff;
+            cursor: pointer;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+            color: #333;
+        }
+        .btn-icon:hover {
+            background: #f0f0f0;
+        }
         .canvas-panel {
             flex: 1;
             display: flex;
@@ -211,7 +226,15 @@ map (
         <div class="canvas-panel">
             <div class="canvas-header">
                 <span>Circuit View</span>
-                <span class="status" id="status">Ready</span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-icon" id="download-btn" title="Download as PNG">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 12l-4-4h2.5V2h3v6H12l-4 4z"/>
+                            <path d="M14 14H2v-2h12v2z"/>
+                        </svg>
+                    </button>
+                    <span class="status" id="status">Ready</span>
+                </div>
             </div>
             <div class="canvas-container">
                 <canvas id="circuit-canvas"></canvas>

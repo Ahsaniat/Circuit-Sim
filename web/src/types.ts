@@ -17,7 +17,7 @@ export interface Wire {
     waypoints?: Position[];
 }
 
-export type ComponentCategory = 'ic' | 'passive' | 'diode' | 'transistor' | 'led' | 'sensor';
+export type ComponentCategory = 'ic' | 'passive' | 'diode' | 'transistor' | 'led' | 'sensor' | 'switch' | 'display' | 'buzzer' | 'motor' | 'power' | 'crystal';
 
 export interface ComponentIR {
     id: string;

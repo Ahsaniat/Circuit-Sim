@@ -26,6 +26,7 @@ class App {
     private setupEventListeners(): void {
         document.getElementById('compile-btn')?.addEventListener('click', () => this.compile());
         document.getElementById('clear-btn')?.addEventListener('click', () => this.clear());
+        document.getElementById('download-btn')?.addEventListener('click', () => this.downloadPNG());
         
         document.getElementById('editor-toggle')?.addEventListener('click', () => {
             this.editorPanel.classList.toggle('collapsed');
@@ -77,6 +78,37 @@ class App {
 
     private setStatus(status: string): void {
         this.statusEl.textContent = status;
+    }
+
+    private downloadPNG(): void {
+        this.setStatus('Generating PNG...');
+        
+        try {
+            this.renderer.exportCanvas((blob) => {
+                if (!blob) {
+                    this.showError('Failed to generate PNG');
+                    this.setStatus('Export failed');
+                    return;
+                }
+                
+                const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0].replace('T', '-');
+                const filename = `circuit-${timestamp}.png`;
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                this.setStatus(`Downloaded: ${filename}`);
+            });
+        } catch (err) {
+            this.showError(`Export error: ${err}`);
+            this.setStatus('Export failed');
+        }
     }
 }
 
