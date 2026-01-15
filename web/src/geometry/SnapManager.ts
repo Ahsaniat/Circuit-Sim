@@ -162,7 +162,7 @@ export class SnapManager {
     }
     
     /**
-     * Snap a component's position based on its first pin
+     * Snap a component position based on its first pin
      * This ensures the component is placed so pin 1 lands on a hole
      * 
      * @param bodyPos - Current body position (top-left corner)

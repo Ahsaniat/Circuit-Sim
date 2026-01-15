@@ -35,8 +35,8 @@ make
 
 ```
 // Declare components
-@comp A1 7408        // 7408 AND gate IC
-@comp O1 7432        // 7432 OR gate IC
+@AND A1 7408        // 7408 AND gate IC
+@OR O1 7432        // 7432 OR gate IC
 @board B1 breadboard_830
 
 // Define connections

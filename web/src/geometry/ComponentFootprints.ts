@@ -298,9 +298,10 @@ export function getComponentFootprint(category: ComponentCategory, pinCount: num
 
 /**
  * Calculate component placement on breadboard
- * Returns the position where the component body's top-left corner should be placed
+ * Returns the position where the component body top-left corner should be placed
  * so that its pins align with the specified breadboard holes
  */
+ 
 export interface PlacementResult {
     /** Body position (top-left corner) */
     bodyX: number;

@@ -1,4 +1,4 @@
-# CircuitSim System Design
+# CircuitSim System Design- Prototype
 
 ## Architecture Overview
 
@@ -6,9 +6,9 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CircuitSim                                │
 ├─────────────────────────────────────────────────────────────────┤
-│  Source File (.csim)                                            │
-│       │                                                         │
-│       ▼                                                         │
+│  Source File (.csim)                                            										     │
+│       │                                                         								   │
+│       ▼                                                         								│
 │  ┌─────────┐    ┌────────┐    ┌──────────┐    ┌─────────────┐  │
 │  │  Lexer  │───▶│ Parser │───▶│ Semantic │───▶│ IR Generator│  │
 │  │         │    │        │    │ Analyzer │    │             │  │
