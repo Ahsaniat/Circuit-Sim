@@ -877,54 +877,54 @@ export class CircuitRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Top power rail
-        const topRailY = y + 4;
+        // Top power rail — rail band is the top RAIL_HEIGHT units of the board
+        const topRailY = y;
+        const holesStartX = geo.holesStartX * S;
         this.ctx.fillStyle = '#f0ebe6';
-        this.ctx.fillRect(x + 6, topRailY, w - 12, railHeight - 4);
-        
-        // + and - labels only (no colored strips)
+        this.ctx.fillRect(x + 6, topRailY, w - 12, railHeight);
+
+        // Rail holes and labels are derived from geometry so drawing and
+        // snapping can never disagree.
+        const topPlusHole = geo.getHolePosition(1, 'TOP+');
+        const topMinusHole = geo.getHolePosition(1, 'TOP-');
         this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
         this.ctx.textAlign = 'left';
         this.ctx.fillStyle = '#c44';
-        this.ctx.fillText('+', x + 8, topRailY + 10);
+        this.ctx.fillText('+', x + 8, topPlusHole.y * S + 3);
         this.ctx.fillStyle = '#44c';
-        this.ctx.fillText('−', x + 8, topRailY + railHeight - 8);
-        
-        // Top rail holes
-        const holesStartX = geo.holesStartX * S;
+        this.ctx.fillText('−', x + 8, topMinusHole.y * S + 3);
+
         this.ctx.fillStyle = '#222';
-        for (let col = 0; col < numCols; col++) {
-            const hx = holesStartX + col * holeSpacing;
-            this.ctx.beginPath();
-            this.ctx.arc(hx, topRailY + 8, 1.5, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.beginPath();
-            this.ctx.arc(hx, topRailY + railHeight - 10, 1.5, 0, Math.PI * 2);
-            this.ctx.fill();
+        for (let col = 1; col <= numCols; col++) {
+            for (const row of ['TOP+', 'TOP-']) {
+                const hole = geo.getHolePosition(col, row);
+                this.ctx.beginPath();
+                this.ctx.arc(hole.x * S, hole.y * S, 1.5, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
         }
 
-        // Bottom power rail
+        // Bottom power rail — rail band is the bottom RAIL_HEIGHT units
         const bottomRailY = y + h - railHeight;
         this.ctx.fillStyle = '#f0ebe6';
-        this.ctx.fillRect(x + 6, bottomRailY, w - 12, railHeight - 4);
-        
-        // + and - labels
+        this.ctx.fillRect(x + 6, bottomRailY, w - 12, railHeight);
+
+        const bottomPlusHole = geo.getHolePosition(1, 'BOTTOM+');
+        const bottomMinusHole = geo.getHolePosition(1, 'BOTTOM-');
         this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
         this.ctx.fillStyle = '#c44';
-        this.ctx.fillText('+', x + 8, bottomRailY + 10);
+        this.ctx.fillText('+', x + 8, bottomPlusHole.y * S + 3);
         this.ctx.fillStyle = '#44c';
-        this.ctx.fillText('−', x + 8, bottomRailY + railHeight - 8);
-        
-        // Bottom rail holes
+        this.ctx.fillText('−', x + 8, bottomMinusHole.y * S + 3);
+
         this.ctx.fillStyle = '#222';
-        for (let col = 0; col < numCols; col++) {
-            const hx = holesStartX + col * holeSpacing;
-            this.ctx.beginPath();
-            this.ctx.arc(hx, bottomRailY + 8, 1.5, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.beginPath();
-            this.ctx.arc(hx, bottomRailY + railHeight - 10, 1.5, 0, Math.PI * 2);
-            this.ctx.fill();
+        for (let col = 1; col <= numCols; col++) {
+            for (const row of ['BOTTOM+', 'BOTTOM-']) {
+                const hole = geo.getHolePosition(col, row);
+                this.ctx.beginPath();
+                this.ctx.arc(hole.x * S, hole.y * S, 1.5, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
         }
 
         // Center channel - positioned exactly between rows E and F

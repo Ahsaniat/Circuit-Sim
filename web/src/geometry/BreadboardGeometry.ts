@@ -21,6 +21,12 @@ export class BreadboardGeometry {
     static readonly RAIL_HEIGHT = 6;          // Power rail area height
     static readonly HOLE_MARGIN = 4.5;        // Margin from edge to first hole
     static readonly CHANNEL_HEIGHT = 3.5;     // Center channel height
+
+    // Rail hole insets, as a fraction of RAIL_HEIGHT measured from the board edge.
+    // Both the renderer and the snap system derive rail holes from these values,
+    // so drawn holes and snap targets can never drift apart.
+    static readonly RAIL_HOLE_INSET = BreadboardGeometry.RAIL_HEIGHT * 0.25;  // 1.5
+    static readonly RAIL_HOLE_SPAN = BreadboardGeometry.RAIL_HEIGHT * 0.75;   // 4.5
     
     // Derived measurements
     static readonly BOARD_WIDTH = BreadboardGeometry.HOLE_MARGIN * 2 + 
@@ -58,10 +64,11 @@ export class BreadboardGeometry {
         const topHalfStartY = this.boardY + BreadboardGeometry.RAIL_HEIGHT + 
             BreadboardGeometry.HOLE_MARGIN;
         
-        // Top power rail rows
-        const topRailY = this.boardY + 4;
-        this.rowYPositions.set('TOP+', topRailY + 8);
-        this.rowYPositions.set('TOP-', topRailY + BreadboardGeometry.RAIL_HEIGHT - 10);
+        // Top power rail rows: both holes live inside the top rail band
+        // [boardY, boardY + RAIL_HEIGHT].
+        const topRailTop = this.boardY;
+        this.rowYPositions.set('TOP+', topRailTop + BreadboardGeometry.RAIL_HOLE_INSET);
+        this.rowYPositions.set('TOP-', topRailTop + BreadboardGeometry.RAIL_HOLE_SPAN);
         
         // Top half rows (A-E)
         for (let i = 0; i < BreadboardGeometry.ROWS_PER_HALF; i++) {
@@ -79,10 +86,11 @@ export class BreadboardGeometry {
             this.rowYPositions.set(row, bottomHalfStartY + i * BreadboardGeometry.HOLE_SPACING);
         }
         
-        // Bottom power rail rows
-        const bottomRailY = this.boardY + BreadboardGeometry.BOARD_HEIGHT - BreadboardGeometry.RAIL_HEIGHT;
-        this.rowYPositions.set('BOTTOM+', bottomRailY + 10);
-        this.rowYPositions.set('BOTTOM-', bottomRailY + BreadboardGeometry.RAIL_HEIGHT - 8);
+        // Bottom power rail rows: both holes live inside the bottom rail band
+        // [boardY + BOARD_HEIGHT - RAIL_HEIGHT, boardY + BOARD_HEIGHT].
+        const bottomRailTop = this.boardY + BreadboardGeometry.BOARD_HEIGHT - BreadboardGeometry.RAIL_HEIGHT;
+        this.rowYPositions.set('BOTTOM+', bottomRailTop + BreadboardGeometry.RAIL_HOLE_INSET);
+        this.rowYPositions.set('BOTTOM-', bottomRailTop + BreadboardGeometry.RAIL_HOLE_SPAN);
     }
     
     /**
