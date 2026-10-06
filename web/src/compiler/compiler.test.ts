@@ -93,3 +93,31 @@ describe('wires', () => {
         expect(ir.wires[0].to.component).toBe('LED1');
     });
 });
+
+describe('multi-board layouts', () => {
+    const twoBoards = `@resistor R1 330\n@led LED1 red\n@board B1 breadboard_830\n@board B2 breadboard_830\nmap (\n (R1 pin 2 -> LED1 pin 1)\n)\n`;
+
+    it('lays boards out side by side without overlap', () => {
+        const ir = compile(twoBoards);
+        expect(ir.boards).toHaveLength(2);
+        const [b1, b2] = ir.boards;
+        expect(b2.position.x).toBeGreaterThanOrEqual(b1.position.x + b1.size.width);
+    });
+
+    it('assigns components and wires to the placement board', () => {
+        const ir = compile(twoBoards);
+        for (const comp of ir.components) {
+            expect(comp.boardId).toBe('B1');
+        }
+        for (const wire of ir.wires) {
+            expect(wire.boardId).toBe('B1');
+        }
+    });
+
+    it('does not register every component on every board', () => {
+        const ir = compile(twoBoards);
+        expect(ir.components).toHaveLength(2);
+        // Only board B1 owns the components; B2 must remain empty.
+        expect(ir.components.filter(c => c.boardId === 'B2')).toHaveLength(0);
+    });
+});

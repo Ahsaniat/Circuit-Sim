@@ -292,9 +292,6 @@ export class CircuitRenderer {
             const newBaseX = pos.x - this.dragOffset.x;
             const newBaseY = pos.y - this.dragOffset.y;
             
-            // Get the primary snap manager (first board)
-            const snapMgr = this.snapManagers.values().next().value as SnapManager | undefined;
-            
             // Check if dragging a wire terminal
             if (this.selectedId.includes('_from') || this.selectedId.includes('_to')) {
                 // Wire terminal dragging - move only that terminal with SNAP
@@ -303,6 +300,7 @@ export class CircuitRenderer {
                     const wireIndex = parseInt(wireIndexMatch[1]);
                     const terminal = wireIndexMatch[2] as 'from' | 'to';
                     const wire = this.circuitIR.wires[wireIndex];
+                    const snapMgr = this.snapManagerFor(wire?.boardId);
                     
                     if (wire && snapMgr) {
                         // Clear waypoints when dragging terminals - manual drag removes routing
@@ -321,8 +319,8 @@ export class CircuitRenderer {
                         }
                         
                         // Update snap preview
-                        if (snapResult.snapped && snapResult.col && snapResult.row) {
-                            const geo = this.boardGeometries.values().next().value as BreadboardGeometry;
+                        const geo = this.geometryFor(wire.boardId);
+                        if (snapResult.snapped && snapResult.col && snapResult.row && geo) {
                             this.snapPreviewHoles = [geo.getHolePosition(snapResult.col, snapResult.row)];
                         } else {
                             this.snapPreviewHoles = [];
@@ -335,7 +333,7 @@ export class CircuitRenderer {
                 if (!dragged) return;
                 
                 if (dragged.type === 'board') {
-                    // Move board and all components and wires on it
+                    // Move this board and only the components/wires that belong to it
                     const board = this.circuitIR.boards.find(b => b.id === this.selectedId);
                     if (board) {
                         const dx = newBaseX - board.position.x;
@@ -343,14 +341,14 @@ export class CircuitRenderer {
                         
                         board.position = { x: newBaseX, y: newBaseY };
                         
-                        // Move all components on this board
                         for (const comp of this.circuitIR.components) {
+                            if (this.boardIdOf(comp.boardId) !== board.id) continue;
                             comp.position.x += dx;
                             comp.position.y += dy;
                         }
                         
-                        // Move all wires (update positions and waypoints)
                         for (const wire of this.circuitIR.wires) {
+                            if (this.boardIdOf(wire.boardId) !== board.id) continue;
                             wire.from.x += dx;
                             wire.from.y += dy;
                             wire.to.x += dx;
@@ -376,6 +374,7 @@ export class CircuitRenderer {
                 } else if (dragged.type === 'wire' && dragged.wireIndex !== undefined) {
                     // Move entire wire independently with SNAP on both terminals
                     const wire = this.circuitIR.wires[dragged.wireIndex];
+                    const snapMgr = this.snapManagerFor(wire?.boardId);
                     if (wire && snapMgr) {
                         // Clear waypoints during manual drag - waypoints are for compile-time routing only
                         wire.waypoints = undefined;
@@ -407,9 +406,11 @@ export class CircuitRenderer {
                     }
                     this.snapPreviewHoles = [];
                 } else if (dragged.type === 'component') {
-                    // Move component with SNAP
+                    // Move component with SNAP, using its owning board
                     const comp = this.circuitIR.components.find(c => c.id === this.selectedId);
-                    if (comp && snapMgr) {
+                    const snapMgr = this.snapManagerFor(comp?.boardId);
+                    const geo = this.geometryFor(comp?.boardId);
+                    if (comp && snapMgr && geo) {
                         const footprint = getComponentFootprint(comp.category || 'ic', comp.pinCount, comp.type);
                         
                         if (footprint.straddlesChannel) {
@@ -429,7 +430,6 @@ export class CircuitRenderer {
                             
                             // Show snap preview for all IC pins
                             if (snapResult.snapped && snapResult.snapCol) {
-                                const geo = this.boardGeometries.values().next().value as BreadboardGeometry;
                                 this.snapPreviewHoles = [];
                                 for (let i = 0; i < pinsPerSide; i++) {
                                     this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + i, 'E'));
@@ -453,7 +453,6 @@ export class CircuitRenderer {
                             
                             // Show snap preview
                             if (snapResult.snapped && snapResult.snapCol && snapResult.snapRow) {
-                                const geo = this.boardGeometries.values().next().value as BreadboardGeometry;
                                 this.snapPreviewHoles = [];
                                 for (const pin of footprint.pins) {
                                     const colOffset = Math.round(pin.offsetX / BreadboardGeometry.HOLE_SPACING);
@@ -587,8 +586,9 @@ export class CircuitRenderer {
     }
     
     /**
-     * Rebuild occupancy map for all snap managers
-     * Called when components are placed or moved
+     * Rebuild occupancy map for all snap managers.
+     * Only elements owned by a board are registered with that board, so
+     * multi-board circuits do not double-register pins on every board.
      */
     private rebuildOccupancy(): void {
         if (!this.circuitIR) return;
@@ -598,8 +598,9 @@ export class CircuitRenderer {
             snapMgr.clearOccupancy();
             const geo = this.boardGeometries.get(boardId)!;
             
-            // Register component pins
+            // Register component pins owned by this board
             for (const comp of this.circuitIR.components) {
+                if (this.boardIdOf(comp.boardId) !== boardId) continue;
                 const footprint = getComponentFootprint(comp.category || 'ic', comp.pinCount, comp.type);
                 
                 if (footprint.straddlesChannel) {
@@ -627,9 +628,10 @@ export class CircuitRenderer {
                 }
             }
             
-            // Register wire terminals
+            // Register wire terminals owned by this board
             for (let i = 0; i < this.circuitIR.wires.length; i++) {
                 const wire = this.circuitIR.wires[i];
+                if (this.boardIdOf(wire.boardId) !== boardId) continue;
                 
                 // From terminal
                 const fromCol = geo.getColumnAtX(wire.from.x);
@@ -680,7 +682,7 @@ export class CircuitRenderer {
                 y: comp.position.y,
                 width: width,
                 height: height,
-                parentBoardId: this.circuitIR.boards[0]?.id
+                parentBoardId: this.boardIdOf(comp.boardId)
             });
         }
         
@@ -700,9 +702,29 @@ export class CircuitRenderer {
                 y: minY,
                 width: maxX - minX,
                 height: maxY - minY,
-                wireIndex: i
+                wireIndex: i,
+                parentBoardId: this.boardIdOf(wire.boardId)
             });
         }
+    }
+    
+    /**
+     * Resolve the board that owns an element. Elements without an explicit
+     * boardId belong to the first board (legacy single-board circuits).
+     */
+    private boardIdOf(boardId: string | undefined): string | undefined {
+        if (boardId && this.boardGeometries.has(boardId)) return boardId;
+        return this.circuitIR?.boards[0]?.id;
+    }
+    
+    private snapManagerFor(boardId: string | undefined): SnapManager | undefined {
+        const resolved = this.boardIdOf(boardId);
+        return resolved ? this.snapManagers.get(resolved) : undefined;
+    }
+    
+    private geometryFor(boardId: string | undefined): BreadboardGeometry | undefined {
+        const resolved = this.boardIdOf(boardId);
+        return resolved ? this.boardGeometries.get(resolved) : undefined;
     }
     
     /**

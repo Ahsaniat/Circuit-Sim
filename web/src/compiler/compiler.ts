@@ -531,8 +531,11 @@ class IRGenerator {
     // Component placements - stores footprint and placement info for each component
     private componentPlacements: Map<string, { footprint: ComponentFootprint; placement: PlacementResult }> = new Map();
     
-    // Board geometry instance
+    // Board geometry instance used for component placement (first board)
     private boardGeometry: BreadboardGeometry | null = null;
+    
+    // Board that owns auto-placed components and wires
+    private defaultBoardId: string | null = null;
     
     // Track next available column for each row group
     private nextAvailableCol: { top: number; bottom: number; straddling: number } = { top: 3, bottom: 3, straddling: 3 };
@@ -551,6 +554,7 @@ class IRGenerator {
         this.componentPlacements.clear();
         this.symbols.clear();
         this.boardGeometry = null;
+        this.defaultBoardId = null;
         this.nextAvailableCol = { top: 3, bottom: 3, straddling: 3 };
 
         for (const comp of program.components) {
@@ -560,9 +564,10 @@ class IRGenerator {
             this.symbols.set(board.id, { kind: 'board', type: board.type, category: 'ic' });
         }
 
-        for (const board of program.boards) {
-            ir.boards.push(this.generateBoard(board));
+        for (let i = 0; i < program.boards.length; i++) {
+            ir.boards.push(this.generateBoard(program.boards[i], i));
         }
+        this.defaultBoardId = program.boards[0]?.id ?? null;
 
         // Layout and generate components using unified footprint system
         this.layoutAndGenerateComponents(program.components, ir);
@@ -584,16 +589,20 @@ class IRGenerator {
         return ir;
     }
 
-    private generateBoard(board: BoardDecl): BoardIR {
-        // Create geometry instance at origin
-        this.boardGeometry = new BreadboardGeometry(0, 0);
+    private generateBoard(board: BoardDecl, index: number): BoardIR {
+        // Only the first board is used for auto-placement; additional boards
+        // are laid out side by side so they do not overlap.
+        if (!this.boardGeometry) {
+            this.boardGeometry = new BreadboardGeometry(0, 0);
+        }
+        const x = index * (BreadboardGeometry.BOARD_WIDTH + 20);
         
         return {
             id: board.id,
             type: board.type,
             rows: BreadboardGeometry.NUM_COLS,
             columns: 10,
-            position: { x: 0, y: 0 },
+            position: { x, y: 0 },
             size: { 
                 width: BreadboardGeometry.BOARD_WIDTH, 
                 height: BreadboardGeometry.BOARD_HEIGHT 
@@ -709,7 +718,8 @@ class IRGenerator {
             position: { x: placementResult.bodyX, y: placementResult.bodyY },
             size: { width: footprint.bodyWidth, height: footprint.bodyHeight },
             category: comp.category,
-            value: comp.value
+            value: comp.value,
+            boardId: this.defaultBoardId ?? undefined
         });
     }
 
@@ -824,7 +834,8 @@ class IRGenerator {
                         y: toPos.y
                     },
                     color,
-                    waypoints
+                    waypoints,
+                    boardId: this.defaultBoardId ?? undefined
                 });
             }
         }

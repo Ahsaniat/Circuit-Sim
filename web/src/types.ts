@@ -15,6 +15,8 @@ export interface Wire {
     to: PinPosition;
     color: string;
     waypoints?: Position[];
+    /** Board this wire belongs to (defaults to the first board). */
+    boardId?: string;
 }
 
 export type ComponentCategory = 'ic' | 'passive' | 'diode' | 'transistor' | 'led' | 'sensor' | 'switch' | 'display' | 'buzzer' | 'motor' | 'power' | 'crystal';
@@ -27,6 +29,8 @@ export interface ComponentIR {
     size: { width: number; height: number };
     category?: ComponentCategory;
     value?: string;  // For resistors (10k), capacitors (100uF), etc.
+    /** Board this component is placed on (defaults to the first board). */
+    boardId?: string;
 }
 
 export interface BoardIR {
