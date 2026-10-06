@@ -20,16 +20,22 @@ interface CompDecl {
     type: string;
     value?: string;  // For resistors, capacitors, etc.
     category: ComponentCategory;
+    line: number;
+    column: number;
 }
 
 interface BoardDecl {
     id: string;
     type: string;
+    line: number;
+    column: number;
 }
 
 interface PinRef {
     componentId: string;
     pinNumber: number;
+    line: number;
+    column: number;
 }
 
 interface Connection {
@@ -376,9 +382,9 @@ class Parser {
     }
 
     private parseCompDecl(): CompDecl {
-        const id = this.consume('IDENTIFIER', 'Expected component identifier').lexeme;
+        const idToken = this.consume('IDENTIFIER', 'Expected component identifier');
         const type = this.consumeAny(['IDENTIFIER', 'NUMBER'], 'Expected component type').lexeme;
-        return { id, type, category: 'ic' };
+        return { id: idToken.lexeme, type, category: 'ic', line: idToken.line, column: idToken.column };
     }
     
     private parseTypedCompDecl(): CompDecl {
@@ -392,7 +398,8 @@ class Parser {
         }
         
         // Parse component identifier
-        const id = this.consume('IDENTIFIER', 'Expected component identifier').lexeme;
+        const idToken = this.consume('IDENTIFIER', 'Expected component identifier');
+        const id = idToken.lexeme;
         
         // Parse optional value or IC number
         let type = compInfo.defaultType;
@@ -420,13 +427,13 @@ class Parser {
             }
         }
         
-        return { id, type, value, category: compInfo.category };
+        return { id, type, value, category: compInfo.category, line: idToken.line, column: idToken.column };
     }
 
     private parseBoardDecl(): BoardDecl {
-        const id = this.consume('IDENTIFIER', 'Expected board identifier').lexeme;
+        const idToken = this.consume('IDENTIFIER', 'Expected board identifier');
         const type = this.consume('IDENTIFIER', 'Expected board type').lexeme;
-        return { id, type };
+        return { id: idToken.lexeme, type, line: idToken.line, column: idToken.column };
     }
 
     private parseMapBlock(): Connection[] {
@@ -458,10 +465,10 @@ class Parser {
     }
 
     private parsePinRef(): PinRef {
-        const componentId = this.consume('IDENTIFIER', 'Expected component identifier').lexeme;
+        const componentId = this.consume('IDENTIFIER', 'Expected component identifier');
         this.consume('PIN', "Expected 'pin' keyword");
         const pinNumber = parseInt(this.consume('NUMBER', 'Expected pin number').lexeme, 10);
-        return { componentId, pinNumber };
+        return { componentId: componentId.lexeme, pinNumber, line: componentId.line, column: componentId.column };
     }
 
     private skipICDef(): void {
@@ -901,6 +908,85 @@ export function compile(source: string): CircuitIR {
     const parser = new Parser(tokens);
     const program = parser.parse();
 
+    validateProgram(program);
+
     const generator = new IRGenerator();
     return generator.generate(program);
+}
+
+// Connection-point counts per board type, used for pin-range validation.
+const BOARD_PIN_COUNTS: Record<string, number> = {
+    'breadboard_830': 830,
+    'breadboard_400': 400,
+    'breadboard_170': 170,
+};
+
+interface SymbolInfo {
+    kind: 'component' | 'board';
+    pinCount: number;
+}
+
+/**
+ * Semantic validation. Runs after parsing and before IR generation so that
+ * undefined references, duplicate declarations and out-of-range pins are
+ * reported instead of silently producing phantom geometry.
+ */
+function validateProgram(program: ParsedProgram): void {
+    const symbols = new Map<string, SymbolInfo>();
+
+    for (const comp of program.components) {
+        if (symbols.has(comp.id)) {
+            throw new CompileError(`Duplicate component declaration: '${comp.id}'`, comp.line, comp.column);
+        }
+        const pinCount = BUILTIN_ICS[comp.type];
+        if (pinCount === undefined) {
+            throw new CompileError(`Unknown component type: '${comp.type}'`, comp.line, comp.column);
+        }
+        symbols.set(comp.id, { kind: 'component', pinCount });
+    }
+
+    for (const board of program.boards) {
+        if (symbols.has(board.id)) {
+            throw new CompileError(`Duplicate board declaration: '${board.id}'`, board.line, board.column);
+        }
+        symbols.set(board.id, { kind: 'board', pinCount: BOARD_PIN_COUNTS[board.type] ?? 830 });
+    }
+
+    const usedBoardPins = new Map<string, Set<number>>();
+
+    const validatePinRef = (ref: PinRef): void => {
+        const symbol = symbols.get(ref.componentId);
+        if (!symbol) {
+            throw new CompileError(`Undefined component: '${ref.componentId}'`, ref.line, ref.column);
+        }
+        if (!Number.isInteger(ref.pinNumber) || ref.pinNumber < 1 || ref.pinNumber > symbol.pinCount) {
+            throw new CompileError(
+                `Invalid pin number ${ref.pinNumber} for '${ref.componentId}' (has ${symbol.pinCount} pins)`,
+                ref.line,
+                ref.column
+            );
+        }
+        if (symbol.kind === 'board') {
+            let used = usedBoardPins.get(ref.componentId);
+            if (!used) {
+                used = new Set<number>();
+                usedBoardPins.set(ref.componentId, used);
+            }
+            if (used.has(ref.pinNumber)) {
+                throw new CompileError(
+                    `Pin ${ref.pinNumber} on board '${ref.componentId}' is already connected`,
+                    ref.line,
+                    ref.column
+                );
+            }
+            used.add(ref.pinNumber);
+        }
+    };
+
+    for (const conn of program.connections) {
+        validatePinRef(conn.source);
+        for (const dest of conn.destinations) {
+            validatePinRef(dest);
+        }
+    }
 }
