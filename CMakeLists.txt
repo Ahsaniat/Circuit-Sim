@@ -5,9 +5,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Source files
-set(SOURCES
-    src/main.cpp
+# Core compiler sources (everything except the CLI entry point)
+set(CORE_SOURCES
     src/compiler.cpp
     src/lexer/lexer.cpp
     src/parser/parser.cpp
@@ -32,20 +31,30 @@ set(HEADERS
     src/error/error_reporter.h
 )
 
+add_library(circuitsim_core STATIC ${CORE_SOURCES} ${HEADERS})
+target_include_directories(circuitsim_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
+
 # Main executable
-add_executable(circuitsim ${SOURCES} ${HEADERS})
-target_include_directories(circuitsim PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_executable(circuitsim src/main.cpp)
+target_link_libraries(circuitsim PRIVATE circuitsim_core)
 
 # Compiler warnings
 if(MSVC)
+    target_compile_options(circuitsim_core PRIVATE /W4)
     target_compile_options(circuitsim PRIVATE /W4)
 else()
+    target_compile_options(circuitsim_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(circuitsim PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Test executable (optional, for development)
+# Tests
 option(BUILD_TESTS "Build tests" OFF)
 if(BUILD_TESTS)
     enable_testing()
-    # Add test targets here later
+    add_executable(circuitsim_tests tests/cpp/compiler_tests.cpp)
+    target_link_libraries(circuitsim_tests PRIVATE circuitsim_core)
+    if(NOT MSVC)
+        target_compile_options(circuitsim_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME compiler_tests COMMAND circuitsim_tests)
 endif()
