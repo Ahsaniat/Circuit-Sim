@@ -242,8 +242,9 @@ class Lexer {
             // New component-specific keywords like @resistor, @AND, @led, etc.
             this.addToken('COMP_TYPE', '@' + keyword, startCol);
         } else {
-            // Unknown @ keyword, treat as COMP for backwards compatibility
-            this.addToken('UNKNOWN_AT', '@' + keyword, startCol);
+            // Unknown directives must fail loudly: silently dropping them hides
+            // typos and unsupported components behind a successful compile.
+            throw new CompileError(`Unknown directive '@${keyword}'`, this.line, startCol);
         }
     }
 
@@ -333,7 +334,10 @@ class Parser {
             } else if (this.match('DEF')) {
                 this.skipICDef();
             } else {
-                this.advance();
+                // Strict mode: never silently discard tokens. A stray token is
+                // almost always a typo that must be reported with its location.
+                const token = this.peek();
+                throw new CompileError(`Unexpected token '${token.lexeme}'`, token.line, token.column);
             }
         }
 
