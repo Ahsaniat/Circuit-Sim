@@ -29,6 +29,7 @@ export class CodeEditor {
     private highlightLayer: HTMLDivElement;
     private gutterEl: HTMLDivElement;
     private onCompile: (() => void) | null = null;
+    private onChange: (() => void) | null = null;
     private _cursorLine = 1;
     private _cursorCol = 1;
     private onCursorChange: ((line: number, col: number) => void) | null = null;
@@ -83,6 +84,10 @@ export class CodeEditor {
         this.onCompile = fn;
     }
 
+    setOnChange(fn: () => void): void {
+        this.onChange = fn;
+    }
+
     setOnCursorChange(fn: (line: number, col: number) => void): void {
         this.onCursorChange = fn;
     }
@@ -112,6 +117,7 @@ export class CodeEditor {
         this.textarea.addEventListener('input', () => {
             this.updateGutter();
             this.updateHighlight();
+            this.onChange?.();
         });
 
         this.textarea.addEventListener('scroll', () => {

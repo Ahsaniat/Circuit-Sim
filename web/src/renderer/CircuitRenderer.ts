@@ -2,6 +2,7 @@ import { CircuitIR, ComponentIR, BoardIR, Wire, Position } from '../types';
 import { BreadboardGeometry, HolePosition } from '../geometry/BreadboardGeometry';
 import { getComponentFootprint } from '../geometry/ComponentFootprints';
 import { SnapManager } from '../geometry/SnapManager';
+import { CircuitHistory } from '../history/CircuitHistory';
 
 const BASE_SCALE = 4;  // Pixels per base unit
 const PADDING = 20;
@@ -70,6 +71,11 @@ export class CircuitRenderer {
     // Tooltip state
     private tooltip: HTMLDivElement | null = null;
     private hoveredComponentId: string | null = null;
+
+    // Undo/redo history (snapshot based)
+    private history = new CircuitHistory<CircuitIR>(100);
+    private dragSnapshot: CircuitIR | null = null;
+    private onHistoryChange: (() => void) | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -292,6 +298,8 @@ export class CircuitRenderer {
         if (element) {
             this.selectedId = element.id;
             this.isDragging = true;
+            // Snapshot before mutation so a drag can be undone as one action.
+            this.dragSnapshot = this.cloneIR();
             
             if (element.type === 'wire_terminal') {
                 // For wire terminals, no offset - move directly to mouse position
@@ -625,6 +633,7 @@ export class CircuitRenderer {
             this.snapPreviewHoles = [];
             this.isSnapped = false;
             this.redraw();
+            this.commitHistory();
         }
         this.isDragging = false;
         this.canvas.style.cursor = this.spacePressed ? 'grab' : 'default';
@@ -643,6 +652,24 @@ export class CircuitRenderer {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
             target.tagName === 'BUTTON' || target.isContentEditable)) {
+            return;
+        }
+
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === 'z' || e.key === 'Z') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    this.redo();
+                } else {
+                    this.undo();
+                }
+                return;
+            }
+            if (e.key === 'y' || e.key === 'Y') {
+                e.preventDefault();
+                this.redo();
+                return;
+            }
             return;
         }
 
@@ -685,6 +712,7 @@ export class CircuitRenderer {
      */
     private deleteSelection(): void {
         if (!this.circuitIR || !this.selectedId) return;
+        const snapshot = this.cloneIR();
         const id = this.selectedId;
         const wireMatch = id.match(/^wire_(\d+)(?:_(?:from|to))?$/);
         if (wireMatch) {
@@ -702,6 +730,10 @@ export class CircuitRenderer {
             }
         }
         this.selectedId = null;
+        if (snapshot) {
+            this.history.push(snapshot);
+            this.notifyHistory();
+        }
         this.rebuildOccupancy();
         this.rebuildDraggables();
         this.redraw();
@@ -772,6 +804,13 @@ export class CircuitRenderer {
     }
 
     render(ir: CircuitIR): void {
+        this.loadIR(ir);
+        this.history.reset();
+        this.dragSnapshot = null;
+        this.notifyHistory();
+    }
+
+    private loadIR(ir: CircuitIR): void {
         this.circuitIR = ir;
         this.boardGeometries.clear();
         this.snapManagers.clear();
@@ -791,6 +830,64 @@ export class CircuitRenderer {
         this.rebuildOccupancy();
         this.rebuildDraggables();
         this.redraw();
+    }
+
+    getIR(): CircuitIR | null {
+        return this.circuitIR;
+    }
+
+    setOnHistoryChange(fn: () => void): void {
+        this.onHistoryChange = fn;
+    }
+
+    canUndo(): boolean {
+        return this.history.canUndo;
+    }
+
+    canRedo(): boolean {
+        return this.history.canRedo;
+    }
+
+    undo(): void {
+        if (!this.circuitIR) return;
+        const previous = this.history.undo(this.circuitIR);
+        if (!previous) return;
+        this.loadIR(previous);
+        this.notifyHistory();
+    }
+
+    redo(): void {
+        if (!this.circuitIR) return;
+        const next = this.history.redo(this.circuitIR);
+        if (!next) return;
+        this.loadIR(next);
+        this.notifyHistory();
+    }
+
+    private cloneIR(): CircuitIR | null {
+        if (!this.circuitIR) return null;
+        if (typeof structuredClone === 'function') {
+            return structuredClone(this.circuitIR);
+        }
+        return JSON.parse(JSON.stringify(this.circuitIR)) as CircuitIR;
+    }
+
+    private commitHistory(): void {
+        if (!this.dragSnapshot || !this.circuitIR) {
+            this.dragSnapshot = null;
+            return;
+        }
+        const before = JSON.stringify(this.dragSnapshot);
+        const after = JSON.stringify(this.circuitIR);
+        if (before !== after) {
+            this.history.push(this.dragSnapshot);
+            this.notifyHistory();
+        }
+        this.dragSnapshot = null;
+    }
+
+    private notifyHistory(): void {
+        this.onHistoryChange?.();
     }
     
     /**

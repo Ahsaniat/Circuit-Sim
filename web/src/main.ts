@@ -11,6 +11,13 @@ import { Templates } from './ui/Templates';
 import { FileManager } from './ui/FileManager';
 import { KeyboardShortcuts } from './ui/KeyboardShortcuts';
 import { SplitPane } from './ui/SplitPane';
+import {
+    CircuitLayout,
+    serializeLayout,
+    extractLayout,
+    applyLayout,
+    layoutToLine,
+} from './layout/LayoutSerializer';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
 @AND A1 7408
@@ -25,6 +32,15 @@ map (
     (A1 pin 6 -> Q1 pin 1)
 )`;
 
+const SESSION_KEY = 'circuitsim-session';
+
+const EMPTY_IR: CircuitIR = { width: 0, height: 0, components: [], boards: [], wires: [] };
+
+interface SessionData {
+    code: string;
+    layout: CircuitLayout | null;
+}
+
 class App {
     private renderer: CircuitRenderer;
     private codeEditor: CodeEditor;
@@ -36,6 +52,8 @@ class App {
     private templates: Templates;
     private fileManager: FileManager;
     private shortcuts: KeyboardShortcuts;
+    private pendingLayout: CircuitLayout | null = null;
+    private autosaveTimer: number | null = null;
 
     constructor() {
         const canvas = document.getElementById('circuit-canvas') as HTMLCanvasElement;
@@ -54,8 +72,11 @@ class App {
         // Code editor with syntax highlighting
         const editorContainer = document.getElementById('code-editor-container')!;
         this.codeEditor = new CodeEditor(editorContainer);
-        this.codeEditor.value = DEFAULT_CODE;
+        const session = this.readSession();
+        this.codeEditor.value = session?.code ?? DEFAULT_CODE;
+        this.pendingLayout = session?.layout ?? null;
         this.codeEditor.setOnCompile(() => this.compile());
+        this.codeEditor.setOnChange(() => this.scheduleAutosave());
 
         // Component library sidebar
         const libContainer = document.getElementById('component-library')!;
@@ -84,6 +105,7 @@ class App {
         // Templates dropdown
         this.templates = new Templates(document.getElementById('templates-btn')!);
         this.templates.setOnSelect((code) => {
+            this.pendingLayout = null;
             this.codeEditor.value = code;
             this.compile();
             this.toast.success('Template loaded');
@@ -91,7 +113,9 @@ class App {
 
         // File manager
         this.fileManager = new FileManager();
-        this.fileManager.setOnLoad((code) => {
+        this.fileManager.setOnLoad((rawCode) => {
+            const { code, layout } = extractLayout(rawCode);
+            this.pendingLayout = layout;
             this.codeEditor.value = code;
             this.compile();
             this.toast.success('Circuit loaded');
@@ -106,12 +130,23 @@ class App {
         const _rightPanel = document.getElementById('canvas-panel')!;
         new SplitPane(mainArea, leftPanel, _rightPanel);
 
+        // Canvas edits affect history + autosave
+        this.renderer.setOnHistoryChange(() => {
+            this.syncHistoryButtons();
+            this.scheduleAutosave();
+        });
+
         // Wire up toolbar buttons
         this.setupToolbar();
         this.setupGlobalShortcuts();
 
         // Initial compile
         this.compile();
+        this.syncHistoryButtons();
+
+        if (session) {
+            this.toast.info('Session restored');
+        }
     }
 
     private setupToolbar(): void {
@@ -122,6 +157,14 @@ class App {
         document.getElementById('load-btn')?.addEventListener('click', () => this.fileManager.openFile());
         document.getElementById('export-btn')?.addEventListener('click', () => this.exportPNG());
         document.getElementById('shortcuts-btn')?.addEventListener('click', () => this.shortcuts.toggle());
+        document.getElementById('undo-btn')?.addEventListener('click', () => {
+            this.renderer.undo();
+            this.scheduleAutosave();
+        });
+        document.getElementById('redo-btn')?.addEventListener('click', () => {
+            this.renderer.redo();
+            this.scheduleAutosave();
+        });
     }
 
     private setupGlobalShortcuts(): void {
@@ -179,10 +222,16 @@ class App {
 
         try {
             const ir: CircuitIR = compile(code);
+            if (this.pendingLayout) {
+                applyLayout(ir, this.pendingLayout);
+                this.pendingLayout = null;
+            }
             this.renderer.render(ir);
             this.statusBar.setStatus('Compiled', 'success');
             this.statusBar.setStats(ir.components.length, ir.wires.length);
             this.syncZoom();
+            this.syncHistoryButtons();
+            this.scheduleAutosave();
         } catch (err) {
             if (err instanceof CompileError) {
                 this.showError(err.message);
@@ -196,16 +245,23 @@ class App {
     }
 
     private clear(): void {
+        this.pendingLayout = null;
         this.codeEditor.value = '';
-        this.renderer.clear();
+        this.renderer.render(EMPTY_IR);
         this.hideError();
         this.statusBar.setStatus('Ready', 'ready');
         this.statusBar.setStats(0, 0);
+        this.syncHistoryButtons();
+        this.scheduleAutosave();
         this.toast.info('Editor cleared');
     }
 
     private save(): void {
-        this.fileManager.saveFile(this.codeEditor.value);
+        const code = this.codeEditor.value;
+        const ir = this.renderer.getIR();
+        const layout = ir ? serializeLayout(ir) : null;
+        const contents = layout ? `${code}\n${layoutToLine(layout)}` : code;
+        this.fileManager.saveFile(contents);
         this.toast.success('Circuit saved');
     }
 
@@ -242,6 +298,43 @@ class App {
         const percent = this.renderer.getZoom();
         this.zoomControls.setZoom(percent);
         this.statusBar.setZoom(percent);
+    }
+
+    private syncHistoryButtons(): void {
+        const undo = document.getElementById('undo-btn') as HTMLButtonElement | null;
+        const redo = document.getElementById('redo-btn') as HTMLButtonElement | null;
+        if (undo) undo.disabled = !this.renderer.canUndo();
+        if (redo) redo.disabled = !this.renderer.canRedo();
+    }
+
+    private scheduleAutosave(): void {
+        if (this.autosaveTimer !== null) {
+            window.clearTimeout(this.autosaveTimer);
+        }
+        this.autosaveTimer = window.setTimeout(() => this.saveSession(), 800);
+    }
+
+    private saveSession(): void {
+        const ir = this.renderer.getIR();
+        const layout = ir ? serializeLayout(ir) : null;
+        const data: SessionData = { code: this.codeEditor.value, layout };
+        try {
+            localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        } catch {
+            // Storage can be unavailable (private mode, quota); autosave is best-effort.
+        }
+    }
+
+    private readSession(): SessionData | null {
+        try {
+            const raw = localStorage.getItem(SESSION_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw) as SessionData;
+            if (typeof parsed.code !== 'string') return null;
+            return { code: parsed.code, layout: parsed.layout ?? null };
+        } catch {
+            return null;
+        }
     }
 
     private showError(message: string): void {
