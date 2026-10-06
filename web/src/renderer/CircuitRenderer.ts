@@ -809,6 +809,42 @@ export class CircuitRenderer {
         this.ctx.fillRect(0, 0, rect.width, rect.height);
     }
 
+    getZoom(): number {
+        return this.zoom * 100;
+    }
+
+    zoomIn(): void {
+        this.setZoomLevel(this.zoom * 1.15);
+    }
+
+    zoomOut(): void {
+        this.setZoomLevel(this.zoom / 1.15);
+    }
+
+    resetZoom(): void {
+        this.zoom = 1;
+        this.panX = 0;
+        this.panY = 0;
+        this.rebuildDraggables();
+        this.redraw();
+    }
+
+    private setZoomLevel(newZoom: number): void {
+        newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+        if (newZoom === this.zoom) return;
+        // Zoom centered on canvas
+        const rect = this.canvas.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+        const worldX = (cx - PADDING - this.panX) / this.zoom;
+        const worldY = (cy - PADDING - this.panY) / this.zoom;
+        this.panX = cx - PADDING - worldX * newZoom;
+        this.panY = cy - PADDING - worldY * newZoom;
+        this.zoom = newZoom;
+        this.rebuildDraggables();
+        this.redraw();
+    }
+
     private renderBoard(board: BoardIR): void {
         const geo = this.boardGeometries.get(board.id);
         if (!geo) return;

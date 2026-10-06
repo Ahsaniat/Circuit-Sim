@@ -1,245 +1,908 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CircuitSim</title>
+    <title>CircuitSim — Code-to-Circuit Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* ============================================
+           THEME — CSS Custom Properties (defaults for dark)
+           ============================================ */
+        :root,
+        [data-theme="dark"] {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #1c2128;
+            --bg-elevated: #21262d;
+            --bg-canvas: #0d1117;
+            --bg-input: #0d1117;
+            --bg-hover: #292e36;
+            --bg-active: #2d333b;
+            --border-primary: #30363d;
+            --border-secondary: #21262d;
+            --border-accent: #58a6ff;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-tertiary: #6e7681;
+            --text-link: #58a6ff;
+            --accent: #58a6ff;
+            --accent-hover: #79c0ff;
+            --accent-muted: #1f3a5f;
+            --success: #3fb950;
+            --success-muted: #1a4028;
+            --warning: #d29922;
+            --warning-muted: #3d2e00;
+            --error: #f85149;
+            --error-muted: #4a1c1c;
+            --info: #58a6ff;
+            --info-muted: #1f3a5f;
+            --shadow: 0 4px 12px rgba(0,0,0,0.4);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+            --editor-bg: #0d1117;
+            --editor-gutter: #161b22;
+            --editor-line-hl: #161b22;
+            --canvas-bg: #0e1116;
+            --scrollbar-track: #161b22;
+            --scrollbar-thumb: #30363d;
+            --overlay-bg: rgba(0,0,0,0.5);
         }
-        html, body {
-            height: 100%;
-            overflow: hidden;
+        [data-theme="light"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f6f8fa;
+            --bg-tertiary: #f0f2f5;
+            --bg-elevated: #ffffff;
+            --bg-canvas: #f5f5f5;
+            --bg-input: #ffffff;
+            --bg-hover: #eaeef2;
+            --bg-active: #dce1e6;
+            --border-primary: #d0d7de;
+            --border-secondary: #e1e4e8;
+            --border-accent: #0969da;
+            --text-primary: #1f2328;
+            --text-secondary: #656d76;
+            --text-tertiary: #8b949e;
+            --text-link: #0969da;
+            --accent: #0969da;
+            --accent-hover: #0550ae;
+            --accent-muted: #ddf4ff;
+            --success: #1a7f37;
+            --success-muted: #dafbe1;
+            --warning: #9a6700;
+            --warning-muted: #fff8c5;
+            --error: #cf222e;
+            --error-muted: #ffebe9;
+            --info: #0969da;
+            --info-muted: #ddf4ff;
+            --shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+            --editor-bg: #ffffff;
+            --editor-gutter: #f6f8fa;
+            --editor-line-hl: #f6f8fa;
+            --canvas-bg: #f5f5f5;
+            --scrollbar-track: #f0f2f5;
+            --scrollbar-thumb: #c1c7cd;
+            --overlay-bg: rgba(0,0,0,0.3);
         }
+
+        /* ============================================
+           RESET & BASE
+           ============================================ */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
-            color: #333;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
-        .container {
+
+        /* ============================================
+           SCROLLBAR
+           ============================================ */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+        /* ============================================
+           APP LAYOUT — 3-zone: toolbar | main | statusbar
+           ============================================ */
+        #app {
             display: flex;
+            flex-direction: column;
             height: 100vh;
             width: 100vw;
         }
-        .editor-panel {
-            width: 320px;
-            min-width: 200px;
-            max-width: 500px;
-            background: #fff;
-            border-right: 1px solid #ddd;
+
+        /* ============================================
+           TOOLBAR
+           ============================================ */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            height: 44px;
+            padding: 0 12px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-primary);
+            gap: 4px;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .toolbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 12px;
+            margin-right: 8px;
+            border-right: 1px solid var(--border-primary);
+        }
+        .toolbar-logo {
+            width: 22px;
+            height: 22px;
+            color: var(--accent);
+        }
+        .toolbar-title {
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: -0.3px;
+            color: var(--text-primary);
+        }
+        .toolbar-title span {
+            font-weight: 400;
+            color: var(--text-tertiary);
+        }
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .toolbar-separator {
+            width: 1px;
+            height: 20px;
+            background: var(--border-primary);
+            margin: 0 6px;
+        }
+        .toolbar-spacer {
+            flex: 1;
+        }
+        .tb-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .tb-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .tb-btn:active {
+            background: var(--bg-active);
+        }
+        .tb-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+        .tb-btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .tb-btn-primary:hover {
+            background: var(--accent-hover);
+            color: #fff;
+        }
+        .tb-btn-icon {
+            padding: 6px;
+        }
+
+        /* ============================================
+           MAIN AREA — sidebar | canvas
+           ============================================ */
+        .main-area {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* ============================================
+           LEFT PANEL — component library + code editor
+           ============================================ */
+        .left-panel {
+            width: 340px;
+            min-width: 240px;
+            max-width: 600px;
             display: flex;
             flex-direction: column;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-primary);
             flex-shrink: 0;
         }
-        .editor-header {
-            padding: 8px 12px;
-            border-bottom: 1px solid #ddd;
-            font-weight: 600;
-            font-size: 12px;
-            background: #fafafa;
+
+        /* --- Component Library --- */
+        .component-library {
+            flex-shrink: 0;
+            max-height: 40%;
+            overflow-y: auto;
+            border-bottom: 1px solid var(--border-primary);
+        }
+        .comp-lib-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-tertiary);
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-secondary);
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        .comp-lib-title { display: flex; align-items: center; gap: 6px; }
+        .comp-lib-toggle {
+            border: none;
+            background: none;
+            color: var(--text-tertiary);
             cursor: pointer;
-            user-select: none;
+            padding: 2px;
+            border-radius: 3px;
         }
-        .editor-header:hover {
-            background: #f0f0f0;
+        .comp-lib-toggle:hover { background: var(--bg-hover); }
+        .comp-lib-list { padding: 4px 0; }
+        .comp-lib-cat-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 6px 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.1s;
+            text-align: left;
         }
-        .collapse-icon {
+        .comp-lib-cat-header:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .comp-lib-cat-header.expanded { color: var(--text-primary); }
+        .comp-lib-cat-icon {
+            display: flex;
+            align-items: center;
+            color: var(--text-tertiary);
+        }
+        .comp-lib-cat-count {
+            margin-left: auto;
             font-size: 10px;
-            transition: transform 0.2s;
+            color: var(--text-tertiary);
+            background: var(--bg-elevated);
+            padding: 1px 6px;
+            border-radius: 10px;
         }
-        .editor-panel.collapsed .collapse-icon {
-            transform: rotate(-90deg);
+        .comp-lib-cat-arrow {
+            display: flex;
+            transition: transform 0.15s;
         }
-        .editor-panel.collapsed {
-            width: 40px;
-            min-width: 40px;
+        .comp-lib-cat-header.expanded .comp-lib-cat-arrow {
+            transform: rotate(90deg);
         }
-        .editor-panel.collapsed .editor-header span:first-child {
+        .comp-lib-items {
             display: none;
+            padding: 2px 0 4px 0;
         }
-        .editor-panel.collapsed .editor-content {
-            display: none;
+        .comp-lib-items.expanded { display: block; }
+        .comp-lib-item {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            padding: 5px 12px 5px 34px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.1s;
         }
-        .editor-content {
+        .comp-lib-item:hover {
+            background: var(--accent-muted);
+            color: var(--text-primary);
+        }
+        .comp-lib-item-label {
+            font-weight: 500;
+            color: inherit;
+        }
+        .comp-lib-item-desc {
+            font-size: 10px;
+            color: var(--text-tertiary);
+            margin-top: 1px;
+        }
+
+        /* --- Code Editor Panel --- */
+        .editor-section {
             flex: 1;
             display: flex;
             flex-direction: column;
             min-height: 0;
+        }
+        .editor-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-tertiary);
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-secondary);
+        }
+        .editor-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .editor-actions button {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border: none;
+            background: transparent;
+            color: var(--text-tertiary);
+            font-family: inherit;
+            font-size: 11px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .editor-actions button:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .editor-actions .compile-btn {
+            background: var(--accent);
+            color: #fff;
+            font-weight: 500;
+        }
+        .editor-actions .compile-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        /* --- Syntax-highlighted code editor --- */
+        .code-editor-wrapper {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
+            background: var(--editor-bg);
+        }
+        .code-editor-gutter {
+            width: 40px;
+            flex-shrink: 0;
+            padding: 8px 0;
+            background: var(--editor-gutter);
+            border-right: 1px solid var(--border-secondary);
+            overflow: hidden;
+            user-select: none;
+        }
+        .gutter-line {
+            height: 20.8px;
+            line-height: 20.8px;
+            font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            text-align: right;
+            padding-right: 8px;
+            color: var(--text-tertiary);
+        }
+        .code-editor-area {
+            flex: 1;
+            position: relative;
             overflow: hidden;
         }
-        #code-editor {
-            flex: 1;
+        .code-editor-highlight,
+        .code-editor-input {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
-            padding: 10px 12px;
-            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            height: 100%;
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', 'Monaco', monospace;
             font-size: 12px;
+            line-height: 20.8px;
+            tab-size: 4;
+            white-space: pre;
+            overflow: auto;
+        }
+        .code-editor-highlight {
+            color: transparent;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .code-editor-input {
+            background: transparent;
+            color: var(--text-primary);
+            caret-color: var(--accent);
             border: none;
-            resize: none;
             outline: none;
-            line-height: 1.6;
-            background: #fff;
+            resize: none;
+            z-index: 2;
+            /* Make text invisible — highlight layer shows colored text */
         }
-        .toolbar {
-            padding: 8px 10px;
-            border-top: 1px solid #ddd;
-            display: flex;
-            gap: 6px;
-            background: #fafafa;
+        /* Syntax highlight colors */
+        .hl-line { height: 20.8px; }
+        .hl-comment { color: var(--text-tertiary); font-style: italic; }
+        .hl-component { color: #d2a8ff; font-weight: 500; }
+        .hl-keyword { color: #ff7b72; }
+        .hl-number { color: #79c0ff; }
+        .hl-arrow { color: var(--accent); font-weight: 600; }
+        .hl-paren { color: #ffa657; }
+        .hl-unknown { color: #ffa657; }
+        /* Light theme syntax colors */
+        [data-theme="light"] .hl-comment { color: #6a737d; }
+        [data-theme="light"] .hl-component { color: #6f42c1; }
+        [data-theme="light"] .hl-keyword { color: #d73a49; }
+        [data-theme="light"] .hl-number { color: #005cc5; }
+        [data-theme="light"] .hl-arrow { color: #005cc5; }
+        [data-theme="light"] .hl-paren { color: #e36209; }
+        [data-theme="light"] .hl-unknown { color: #e36209; }
+
+        /* --- Error Panel --- */
+        .error-panel {
+            background: var(--error-muted);
+            border-top: 1px solid var(--error);
+            padding: 8px 12px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--error);
+            max-height: 80px;
+            overflow-y: auto;
+            flex-shrink: 0;
         }
-        .btn {
-            padding: 6px 14px;
-            border: 1px solid #ccc;
-            background: #fff;
-            cursor: pointer;
-            font-size: 12px;
-            border-radius: 3px;
-            transition: background 0.15s;
-        }
-        .btn:hover {
-            background: #f0f0f0;
-        }
-        .btn-primary {
-            background: #0066cc;
-            color: #fff;
-            border-color: #0055aa;
-        }
-        .btn-primary:hover {
-            background: #0055aa;
-        }
-        .btn-icon {
-            padding: 6px;
-            border: 1px solid #ccc;
-            background: #fff;
-            cursor: pointer;
-            border-radius: 3px;
+        .error-panel.hidden { display: none; }
+
+        /* ============================================
+           SPLIT HANDLE
+           ============================================ */
+        .split-handle {
+            width: 5px;
+            cursor: col-resize;
             display: flex;
             align-items: center;
             justify-content: center;
+            background: var(--border-primary);
+            flex-shrink: 0;
             transition: background 0.15s;
-            color: #333;
+            z-index: 5;
         }
-        .btn-icon:hover {
-            background: #f0f0f0;
+        .split-handle:hover, .split-handle.active {
+            background: var(--accent);
         }
+        .split-handle-bar {
+            width: 2px;
+            height: 24px;
+            border-radius: 1px;
+            background: var(--text-tertiary);
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .split-handle:hover .split-handle-bar { opacity: 1; }
+
+        /* ============================================
+           CANVAS PANEL
+           ============================================ */
         .canvas-panel {
             flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
-            overflow: hidden;
-        }
-        .canvas-header {
-            padding: 8px 12px;
-            border-bottom: 1px solid #ddd;
-            background: #fff;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-            flex-shrink: 0;
-        }
-        .canvas-container {
-            flex: 1;
             position: relative;
-            overflow: auto;
-            background: #f5f5f5;
+            overflow: hidden;
+            background: var(--canvas-bg);
+            min-width: 0;
         }
         #circuit-canvas {
             display: block;
         }
-        .error-panel {
-            background: #fef2f2;
-            border-top: 1px solid #fca5a5;
-            padding: 8px 10px;
+
+        /* ============================================
+           ZOOM CONTROLS
+           ============================================ */
+        .zoom-controls {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 3px;
+            box-shadow: var(--shadow);
+            z-index: 10;
+        }
+        .zoom-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        .zoom-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .zoom-label {
+            padding: 0 6px;
             font-size: 11px;
-            font-family: 'SF Mono', 'Consolas', monospace;
-            color: #b91c1c;
-            max-height: 100px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            min-width: 38px;
+            text-align: center;
+        }
+        .zoom-label:hover { color: var(--accent); }
+
+        /* ============================================
+           STATUS BAR
+           ============================================ */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 26px;
+            padding: 0 12px;
+            background: var(--bg-tertiary);
+            border-top: 1px solid var(--border-primary);
+            font-size: 11px;
+            color: var(--text-tertiary);
+            flex-shrink: 0;
+        }
+        .status-bar-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .status-bar-left { min-width: 180px; }
+        .status-bar-center { flex: 1; justify-content: center; }
+        .status-bar-right { min-width: 200px; justify-content: flex-end; }
+        .status-bar-item { display: flex; align-items: center; gap: 4px; }
+        .status-bar-hint { color: var(--text-tertiary); opacity: 0.7; }
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot-ready { background: var(--success); }
+        .status-dot-compiling { background: var(--warning); animation: pulse 1s infinite; }
+        .status-dot-error { background: var(--error); }
+        .status-dot-success { background: var(--success); }
+        .status-indicator { font-weight: 500; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ============================================
+           TOAST NOTIFICATIONS
+           ============================================ */
+        .toast-container {
+            position: fixed;
+            top: 56px;
+            right: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .toast {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 10px 14px;
+            min-width: 280px;
+            max-width: 420px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            font-size: 12px;
+            color: var(--text-primary);
+            pointer-events: all;
+            transform: translateX(120%);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .toast-visible {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        .toast-exit {
+            transform: translateX(120%);
+            opacity: 0;
+        }
+        .toast-icon { flex-shrink: 0; margin-top: 1px; }
+        .toast-message { flex: 1; line-height: 1.4; }
+        .toast-close {
+            flex-shrink: 0;
+            border: none;
+            background: none;
+            color: var(--text-tertiary);
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0 2px;
+            line-height: 1;
+        }
+        .toast-close:hover { color: var(--text-primary); }
+        .toast-success { border-left: 3px solid var(--success); }
+        .toast-success .toast-icon { color: var(--success); }
+        .toast-error { border-left: 3px solid var(--error); }
+        .toast-error .toast-icon { color: var(--error); }
+        .toast-warning { border-left: 3px solid var(--warning); }
+        .toast-warning .toast-icon { color: var(--warning); }
+        .toast-info { border-left: 3px solid var(--info); }
+        .toast-info .toast-icon { color: var(--info); }
+
+        /* ============================================
+           TEMPLATES DROPDOWN
+           ============================================ */
+        .templates-dropdown {
+            position: fixed;
+            z-index: 100;
+            min-width: 280px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            padding: 4px;
+        }
+        .templates-dropdown-header {
+            padding: 8px 12px 6px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-tertiary);
+        }
+        .templates-dropdown-item {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 12px;
+            text-align: left;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .templates-dropdown-item:hover {
+            background: var(--accent-muted);
+        }
+        .templates-item-name { font-weight: 500; }
+        .templates-item-desc {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 2px;
+        }
+
+        /* ============================================
+           KEYBOARD SHORTCUTS MODAL
+           ============================================ */
+        .shortcuts-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--overlay-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .shortcuts-modal {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+            width: 440px;
+            max-height: 80vh;
             overflow-y: auto;
         }
-        .error-panel.hidden {
-            display: none;
+        .shortcuts-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px 12px;
+            border-bottom: 1px solid var(--border-primary);
         }
-        .status {
+        .shortcuts-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .shortcuts-close {
+            border: none;
+            background: none;
+            color: var(--text-tertiary);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .shortcuts-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .shortcuts-body { padding: 12px 20px 20px; }
+        .shortcuts-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-secondary);
+        }
+        .shortcuts-row:last-child { border-bottom: none; }
+        .shortcuts-keys { display: flex; align-items: center; gap: 4px; }
+        .shortcuts-desc { color: var(--text-secondary); font-size: 12px; }
+        kbd {
+            display: inline-block;
+            padding: 2px 7px;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 11px;
-            color: #666;
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: 4px;
+            box-shadow: 0 1px 0 var(--border-primary);
         }
+        .key-plus {
+            color: var(--text-tertiary);
+            font-size: 10px;
+            margin: 0 1px;
+        }
+
+        /* ============================================
+           RESPONSIVE
+           ============================================ */
         @media (max-width: 768px) {
-            .container {
-                flex-direction: column;
-            }
-            .editor-panel {
-                width: 100%;
+            .main-area { flex-direction: column; }
+            .left-panel {
+                width: 100% !important;
                 max-width: none;
-                height: auto;
                 max-height: 45vh;
                 border-right: none;
-                border-bottom: 1px solid #ddd;
+                border-bottom: 1px solid var(--border-primary);
             }
-            .editor-panel.collapsed {
-                width: 100%;
-                height: auto;
-            }
-            .editor-content {
-                max-height: 35vh;
-            }
-            .canvas-panel {
-                flex: 1;
-                min-height: 50vh;
-            }
+            .split-handle { display: none; }
+            .toolbar-title span { display: none; }
+            .status-bar-hint { display: none; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="editor-panel" id="editor-panel">
-            <div class="editor-header" id="editor-toggle">
-                <span>Circuit Code</span>
-                <span class="collapse-icon">&#9660;</span>
+    <div id="app">
+        <!-- TOOLBAR -->
+        <div class="toolbar" id="toolbar">
+            <div class="toolbar-brand">
+                <svg class="toolbar-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+                <div class="toolbar-title">CircuitSim <span>v0.1</span></div>
             </div>
-            <div class="editor-content">
-                <textarea id="code-editor" spellcheck="false">// LED Circuit with Logic Gates
-@AND A1 7408
-@resistor R1 330
-@led LED1 red
-@npn Q1 2N2222
-@board B1 breadboard_830
 
-map (
-    (A1 pin 3 -> R1 pin 1)
-    (R1 pin 2 -> LED1 pin 1)
-    (A1 pin 6 -> Q1 pin 1)
-)</textarea>
-                <div class="toolbar">
-                    <button class="btn btn-primary" id="compile-btn">Compile</button>
-                    <button class="btn" id="clear-btn">Clear</button>
-                </div>
-                <div class="error-panel hidden" id="error-panel"></div>
+            <div class="toolbar-group">
+                <button class="tb-btn" id="templates-btn" title="Load a template circuit">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75A.75.75 0 011.75 2h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 2.75zm0 5A.75.75 0 011.75 7h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 7.75zm0 5a.75.75 0 01.75-.75h12.5a.75.75 0 010 1.5H1.75a.75.75 0 01-.75-.75z"/></svg>
+                    Templates
+                </button>
+            </div>
+
+            <div class="toolbar-separator"></div>
+
+            <div class="toolbar-group">
+                <button class="tb-btn tb-btn-primary" id="compile-btn" title="Compile circuit (Ctrl+Enter)">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>
+                    Compile
+                </button>
+                <button class="tb-btn" id="clear-btn" title="Clear editor">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M11 1.75V3h2.25a.75.75 0 010 1.5H2.75a.75.75 0 010-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM4.496 6.675a.75.75 0 10-1.492.15l.66 6.6A1.75 1.75 0 005.405 15h5.19a1.75 1.75 0 001.741-1.575l.66-6.6a.75.75 0 10-1.492-.15l-.66 6.6a.25.25 0 01-.249.225h-5.19a.25.25 0 01-.249-.225l-.66-6.6zM6.5 1.75V3h3V1.75a.25.25 0 00-.25-.25h-2.5a.25.25 0 00-.25.25z"/></svg>
+                    Clear
+                </button>
+            </div>
+
+            <div class="toolbar-separator"></div>
+
+            <div class="toolbar-group">
+                <button class="tb-btn" id="save-btn" title="Save circuit (Ctrl+S)">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25a1.75 1.75 0 01.445-.758l8.61-8.61zm1.414 1.06a.25.25 0 00-.354 0L3.463 11.098a.25.25 0 00-.064.108l-.558 1.953 1.953-.558a.25.25 0 00.108-.064l8.61-8.61a.25.25 0 000-.354l-1.086-1.086z"/></svg>
+                    Save
+                </button>
+                <button class="tb-btn" id="load-btn" title="Open circuit file (Ctrl+O)">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3.75 1.5a.25.25 0 00-.25.25v11.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V6H9.75A1.75 1.75 0 018 4.25V1.5H3.75zm5.75.56v2.19c0 .138.112.25.25.25h2.19L9.5 2.06zM2 1.75C2 .784 2.784 0 3.75 0h5.086c.464 0 .909.184 1.237.513l3.414 3.414c.329.328.513.773.513 1.237v8.086A1.75 1.75 0 0112.25 15h-8.5A1.75 1.75 0 012 13.25V1.75z"/></svg>
+                    Open
+                </button>
+                <button class="tb-btn" id="export-btn" title="Export as PNG (Ctrl+Shift+E)">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 12l-4-4h2.5V2h3v6H12l-4 4z"/><path d="M14 14H2v-2h12v2z"/></svg>
+                    PNG
+                </button>
+            </div>
+
+            <div class="toolbar-spacer"></div>
+
+            <div class="toolbar-group">
+                <button class="tb-btn tb-btn-icon" id="theme-btn" title="Toggle theme"></button>
+                <button class="tb-btn tb-btn-icon" id="shortcuts-btn" title="Keyboard shortcuts (Ctrl+/)">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 8a8 8 0 1116 0A8 8 0 010 8zm8-6.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM6.92 6.085h.001a.749.749 0 11-1.342-.67c.169-.339.516-.592.916-.678.4-.086.85-.005 1.21.213.36.22.644.581.783.996.14.416.103.88-.09 1.27a1.52 1.52 0 01-.3.38l-.3.24c-.098.076-.139.126-.164.168a.25.25 0 00-.023.065v.15a.75.75 0 01-1.5 0v-.15c0-.333.098-.622.262-.862.16-.234.372-.404.546-.52l.296-.237a.45.45 0 00.04-.04c.062-.088.086-.19.065-.3-.02-.11-.075-.21-.15-.27-.074-.059-.175-.096-.29-.07-.114.025-.198.09-.245.165zM9 11a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
+                </button>
             </div>
         </div>
-        <div class="canvas-panel">
-            <div class="canvas-header">
-                <span>Circuit View</span>
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <button class="btn-icon" id="download-btn" title="Download as PNG">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M8 12l-4-4h2.5V2h3v6H12l-4 4z"/>
-                            <path d="M14 14H2v-2h12v2z"/>
-                        </svg>
-                    </button>
-                    <span class="status" id="status">Ready</span>
+
+        <!-- MAIN AREA -->
+        <div class="main-area" id="main-area">
+            <!-- LEFT PANEL -->
+            <div class="left-panel" id="left-panel">
+                <!-- Component Library -->
+                <div id="component-library"></div>
+
+                <!-- Code Editor Section -->
+                <div class="editor-section">
+                    <div class="editor-section-header">
+                        <span>Code Editor</span>
+                        <div class="editor-actions">
+                            <button class="compile-btn" id="compile-btn-2">
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>
+                                Compile
+                            </button>
+                        </div>
+                    </div>
+                    <div id="code-editor-container"></div>
+                    <div class="error-panel hidden" id="error-panel"></div>
                 </div>
             </div>
-            <div class="canvas-container">
+
+            <!-- CANVAS PANEL -->
+            <div class="canvas-panel" id="canvas-panel">
                 <canvas id="circuit-canvas"></canvas>
             </div>
         </div>
+
+        <!-- STATUS BAR -->
+        <div id="status-bar"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
 </body>

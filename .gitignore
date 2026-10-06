@@ -2,6 +2,25 @@
 build/
 web/dist/
 web/node_modules/
+coverage/
+
+# Local process records and logs (kept on disk, never committed)
+logs/
+__docs__/audit-*.md
+__docs__/bugfix-report.md
+__docs__/BUGFIX_SUMMARY.md
+__docs__/IMPLEMENTATION_SUMMARY.md
+request.md
+
+# Secrets and environment
+.env
+.env.*
+*.pem
+*.key
+
+# Temp scratch
+tmp/
+temp/
 
 # IDE
 .vscode/
