@@ -271,6 +271,20 @@ class Lexer {
         while (!this.isAtEnd() && this.isDigit(this.peek())) {
             num += this.advance();
         }
+
+        // Decimal point followed by digits (e.g. 4.7k)
+        if (!this.isAtEnd() && this.peek() === '.' && this.isDigit(this.source[this.current + 1] ?? '')) {
+            num += this.advance(); // consume '.'
+            while (!this.isAtEnd() && this.isDigit(this.peek())) {
+                num += this.advance();
+            }
+        }
+
+        // Alphanumeric unit/part-number suffix (e.g. 10k, 100uF, 2N2222, 16MHz, 50%)
+        while (!this.isAtEnd() && (this.isAlphaNumeric(this.peek()) || this.peek() === '%')) {
+            num += this.advance();
+        }
+
         this.addToken('NUMBER', num, startCol);
     }
 
