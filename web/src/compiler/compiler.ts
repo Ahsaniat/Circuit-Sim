@@ -111,6 +111,29 @@ const COMPONENT_KEYWORDS: Record<string, { category: ComponentCategory; defaultT
     // Counters
     'counter_4bit': { category: 'ic', defaultType: '74161', pinCount: 16 },
     'counter_decade': { category: 'ic', defaultType: '7490', pinCount: 14 },
+
+    // Switches
+    'switch_spst': { category: 'switch', defaultType: 'SPST', pinCount: 2 },
+    'switch_spdt': { category: 'switch', defaultType: 'SPDT', pinCount: 3 },
+    'pushbutton': { category: 'switch', defaultType: 'PUSHBUTTON', pinCount: 4 },
+
+    // Displays
+    'display_7seg': { category: 'display', defaultType: '7SEG', pinCount: 10 },
+
+    // Buzzers
+    'buzzer': { category: 'buzzer', defaultType: 'ACTIVE', pinCount: 2 },
+    'passive_buzzer': { category: 'buzzer', defaultType: 'PASSIVE_BUZZER', pinCount: 2 },
+
+    // Motors
+    'motor_dc': { category: 'motor', defaultType: 'DC', pinCount: 2 },
+    'servo': { category: 'motor', defaultType: 'SERVO', pinCount: 3 },
+
+    // Power
+    'battery': { category: 'power', defaultType: 'BATTERY', pinCount: 2 },
+    'regulator': { category: 'power', defaultType: 'REGULATOR', pinCount: 3 },
+
+    // Crystal
+    'crystal': { category: 'crystal', defaultType: 'CRYSTAL', pinCount: 2 },
 };
 
 // Built-in IC pin counts (extended)
@@ -141,6 +164,14 @@ const BUILTIN_ICS: Record<string, number> = {
     'DIODE': 2, 'ZENER': 2, 'SCHOTTKY': 2,
     'LED': 2, 'IR_LED': 2, 'PHOTODIODE': 2, 'LDR': 2,
     'NPN': 3, 'PNP': 3, 'NMOS': 3, 'PMOS': 3,
+
+    // Switches, displays, audio, motors, power, crystal
+    'SPST': 2, 'SPDT': 3, 'PUSHBUTTON': 4,
+    '7SEG': 10,
+    'ACTIVE': 2, 'PASSIVE_BUZZER': 2,
+    'DC': 2, 'SERVO': 3,
+    'BATTERY': 2, 'REGULATOR': 3,
+    'CRYSTAL': 2,
 };
 
 export class CompileError extends Error {
