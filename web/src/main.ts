@@ -77,7 +77,8 @@ class App {
         this.zoomControls.setCallbacks(
             () => { this.renderer.zoomIn(); this.syncZoom(); },
             () => { this.renderer.zoomOut(); this.syncZoom(); },
-            () => { this.renderer.resetZoom(); this.syncZoom(); }
+            () => { this.renderer.resetZoom(); this.syncZoom(); },
+            () => { this.renderer.fitToView(); this.syncZoom(); }
         );
 
         // Templates dropdown

@@ -16,8 +16,14 @@ const SHORTCUTS: ShortcutEntry[] = [
     { keys: 'Ctrl + +', description: 'Zoom in' },
     { keys: 'Ctrl + -', description: 'Zoom out' },
     { keys: 'Ctrl + 0', description: 'Reset zoom' },
+    { keys: 'F', description: 'Fit circuit to view' },
     { keys: 'Scroll wheel', description: 'Zoom canvas' },
+    { keys: 'Space + drag', description: 'Pan canvas' },
+    { keys: 'Middle-drag', description: 'Pan canvas' },
+    { keys: 'Pinch (touch)', description: 'Zoom canvas' },
     { keys: 'Click + drag', description: 'Move components / wires' },
+    { keys: 'Delete', description: 'Delete selected element' },
+    { keys: 'Escape', description: 'Clear selection' },
     { keys: 'Tab', description: 'Insert 4 spaces in editor' },
 ];
 

@@ -7,6 +7,7 @@ export class ZoomControls {
     private onZoomIn: (() => void) | null = null;
     private onZoomOut: (() => void) | null = null;
     private onZoomReset: (() => void) | null = null;
+    private onZoomFit: (() => void) | null = null;
 
     constructor(parent: HTMLElement) {
         this.container = document.createElement('div');
@@ -15,10 +16,11 @@ export class ZoomControls {
         parent.appendChild(this.container);
     }
 
-    setCallbacks(onIn: () => void, onOut: () => void, onReset: () => void): void {
+    setCallbacks(onIn: () => void, onOut: () => void, onReset: () => void, onFit?: () => void): void {
         this.onZoomIn = onIn;
         this.onZoomOut = onOut;
         this.onZoomReset = onReset;
+        this.onZoomFit = onFit ?? null;
     }
 
     setZoom(percent: number): void {
@@ -41,10 +43,17 @@ export class ZoomControls {
             () => this.onZoomReset?.()
         );
 
+        const fitBtn = this.createButton(
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v1.5H3.5V6H2V2zm7 0h5v4h-1.5V3.5H9V2zM2 10h1.5v2.5H7V14H2v-4zm10.5 0H14v4H9v-1.5h3.5V10z"/></svg>',
+            'Fit circuit to view (F)',
+            () => this.onZoomFit?.()
+        );
+
         this.container.appendChild(zoomIn);
         this.container.appendChild(this.zoomLabel);
         this.container.appendChild(zoomOut);
         this.container.appendChild(resetBtn);
+        this.container.appendChild(fitBtn);
     }
 
     private createButton(html: string, title: string, onClick: () => void): HTMLButtonElement {

@@ -50,6 +50,13 @@ export class CircuitRenderer {
     private selectedId: string | null = null;
     private isDragging = false;
     private dragOffset = { x: 0, y: 0 };
+
+    // Pan / pinch state
+    private isPanning = false;
+    private panStart = { x: 0, y: 0 };
+    private spacePressed = false;
+    private activePointers: Map<number, { x: number; y: number }> = new Map();
+    private pinchState: { distance: number; midX: number; midY: number } | null = null;
     
     // Snap preview state
     private snapPreviewHoles: HolePosition[] = [];
@@ -94,11 +101,16 @@ export class CircuitRenderer {
     }
 
     private setupEventListeners(): void {
-        this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-        this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-        this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-        this.canvas.addEventListener('mouseleave', this.onMouseLeave.bind(this));
+        this.canvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        this.canvas.addEventListener('pointermove', this.onPointerMove.bind(this));
+        this.canvas.addEventListener('pointerup', this.onPointerUp.bind(this));
+        this.canvas.addEventListener('pointercancel', this.onPointerUp.bind(this));
+        this.canvas.addEventListener('pointerleave', this.onPointerLeave.bind(this));
         this.canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
+        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        window.addEventListener('keydown', this.onKeyDown.bind(this));
+        window.addEventListener('keyup', this.onKeyUp.bind(this));
     }
 
     private getMousePos(e: MouseEvent): Position {
@@ -119,32 +131,28 @@ export class CircuitRenderer {
     
     private onWheel(e: WheelEvent): void {
         e.preventDefault();
-        
-        const rect = this.canvas.getBoundingClientRect();
-        // Mouse position in screen space (relative to canvas)
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-        
-        // Calculate zoom factor
         const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
         const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom * zoomFactor));
-        
         if (newZoom !== this.zoom) {
-            // Adjust pan to keep mouse point stationary
-            // Before zoom: screenPos = (worldPos * zoom) + pan + padding
-            // After zoom: screenPos = (worldPos * newZoom) + newPan + padding
-            // We want the same worldPos under the mouse, so:
-            // (mouseX - padding - panX) / zoom = (mouseX - padding - newPanX) / newZoom
-            const worldX = (mouseX - PADDING - this.panX) / this.zoom;
-            const worldY = (mouseY - PADDING - this.panY) / this.zoom;
-            
-            this.panX = mouseX - PADDING - worldX * newZoom;
-            this.panY = mouseY - PADDING - worldY * newZoom;
-            this.zoom = newZoom;
-            
+            this.applyZoomAround(newZoom, e.clientX, e.clientY);
             this.rebuildDraggables();
             this.redraw();
         }
+    }
+
+    /**
+     * Zoom so that the world point under (clientX, clientY) stays stationary.
+     */
+    private applyZoomAround(newZoom: number, clientX: number, clientY: number): void {
+        newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = clientX - rect.left;
+        const mouseY = clientY - rect.top;
+        const worldX = (mouseX - PADDING - this.panX) / this.zoom;
+        const worldY = (mouseY - PADDING - this.panY) / this.zoom;
+        this.panX = mouseX - PADDING - worldX * newZoom;
+        this.panY = mouseY - PADDING - worldY * newZoom;
+        this.zoom = newZoom;
     }
 
     private findElementAt(pos: Position): DraggableElement | null {
@@ -254,7 +262,27 @@ export class CircuitRenderer {
         return Math.sqrt((point.x - closestX) ** 2 + (point.y - closestY) ** 2);
     }
 
-    private onMouseDown(e: MouseEvent): void {
+    private onPointerDown(e: PointerEvent): void {
+        this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        // Two fingers: pinch zoom + pan, cancelling any element drag
+        if (this.activePointers.size === 2) {
+            this.beginPinch();
+            return;
+        }
+        if (this.activePointers.size > 2) return;
+
+        // Middle mouse or Space + drag pans the canvas
+        if (e.button === 1 || (e.button === 0 && this.spacePressed)) {
+            e.preventDefault();
+            this.isPanning = true;
+            this.panStart = { x: e.clientX, y: e.clientY };
+            this.canvas.setPointerCapture(e.pointerId);
+            this.canvas.style.cursor = 'grabbing';
+            return;
+        }
+        if (e.button !== 0) return;
+
         const pos = this.getMousePos(e);
         const element = this.findElementAt(pos);
         
@@ -276,6 +304,7 @@ export class CircuitRenderer {
                 this.dragOffset = { x: pos.x - element.x, y: pos.y - element.y };
             }
             
+            this.canvas.setPointerCapture(e.pointerId);
             this.canvas.style.cursor = 'grabbing';
             this.redraw();
         } else {
@@ -284,7 +313,58 @@ export class CircuitRenderer {
         }
     }
 
-    private onMouseMove(e: MouseEvent): void {
+    private beginPinch(): void {
+        this.isDragging = false;
+        this.isPanning = false;
+        const pts = [...this.activePointers.values()];
+        if (pts.length < 2) return;
+        const [a, b] = pts;
+        this.pinchState = {
+            distance: Math.hypot(a.x - b.x, a.y - b.y),
+            midX: (a.x + b.x) / 2,
+            midY: (a.y + b.y) / 2,
+        };
+        this.canvas.style.cursor = 'grabbing';
+    }
+
+    private updatePinch(): void {
+        const pts = [...this.activePointers.values()];
+        if (pts.length < 2) return;
+        const [a, b] = pts;
+        const distance = Math.hypot(a.x - b.x, a.y - b.y);
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+
+        if (this.pinchState && this.pinchState.distance > 0 && distance > 0) {
+            const ratio = distance / this.pinchState.distance;
+            if (Number.isFinite(ratio) && ratio > 0) {
+                this.applyZoomAround(this.zoom * ratio, midX, midY);
+            }
+            this.panX += midX - this.pinchState.midX;
+            this.panY += midY - this.pinchState.midY;
+            this.rebuildDraggables();
+            this.redraw();
+        }
+        this.pinchState = { distance, midX, midY };
+    }
+
+    private onPointerMove(e: PointerEvent): void {
+        if (this.activePointers.has(e.pointerId)) {
+            this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }
+        if (this.activePointers.size >= 2) {
+            this.updatePinch();
+            return;
+        }
+        if (this.isPanning) {
+            this.panX += e.clientX - this.panStart.x;
+            this.panY += e.clientY - this.panStart.y;
+            this.panStart = { x: e.clientX, y: e.clientY };
+            this.rebuildDraggables();
+            this.redraw();
+            return;
+        }
+
         const pos = this.getMousePos(e);
         
         if (this.isDragging && this.selectedId && this.circuitIR) {
@@ -524,7 +604,21 @@ export class CircuitRenderer {
         this.tooltip.style.display = 'none';
     }
 
-    private onMouseUp(): void {
+    private onPointerUp(e: PointerEvent): void {
+        this.activePointers.delete(e.pointerId);
+        if (this.activePointers.size < 2) {
+            this.pinchState = null;
+        }
+        if (this.canvas.hasPointerCapture(e.pointerId)) {
+            this.canvas.releasePointerCapture(e.pointerId);
+        }
+
+        if (this.isPanning) {
+            this.isPanning = false;
+            this.canvas.style.cursor = this.spacePressed ? 'grab' : 'default';
+            return;
+        }
+
         if (this.isDragging) {
             // Rebuild occupancy map after drag completes
             this.rebuildOccupancy();
@@ -533,16 +627,130 @@ export class CircuitRenderer {
             this.redraw();
         }
         this.isDragging = false;
-        this.canvas.style.cursor = 'default';
+        this.canvas.style.cursor = this.spacePressed ? 'grab' : 'default';
     }
     
-    private onMouseLeave(): void {
-        this.isDragging = false;
-        this.canvas.style.cursor = 'default';
+    private onPointerLeave(): void {
+        if (this.isDragging || this.isPanning || this.activePointers.size > 0) return;
+        this.canvas.style.cursor = this.spacePressed ? 'grab' : 'default';
         this.hoveredComponentId = null;
         this.snapPreviewHoles = [];
         this.isSnapped = false;
         this.hideTooltip();
+    }
+
+    private onKeyDown(e: KeyboardEvent): void {
+        const target = e.target as HTMLElement | null;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
+            target.tagName === 'BUTTON' || target.isContentEditable)) {
+            return;
+        }
+
+        if (e.code === 'Space') {
+            this.spacePressed = true;
+            this.canvas.style.cursor = 'grab';
+            e.preventDefault();
+            return;
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (this.selectedId) {
+                e.preventDefault();
+                this.deleteSelection();
+            }
+            return;
+        }
+        if (e.key === 'Escape') {
+            this.selectedId = null;
+            this.snapPreviewHoles = [];
+            this.redraw();
+            return;
+        }
+        if (e.key === 'f' || e.key === 'F') {
+            this.fitToView();
+        }
+    }
+
+    private onKeyUp(e: KeyboardEvent): void {
+        if (e.code === 'Space') {
+            this.spacePressed = false;
+            if (!this.isPanning) {
+                this.canvas.style.cursor = 'default';
+            }
+        }
+    }
+
+    /**
+     * Delete the current selection from the in-memory IR. The DSL source is
+     * not modified; layout persistence is handled by the app layer.
+     */
+    private deleteSelection(): void {
+        if (!this.circuitIR || !this.selectedId) return;
+        const id = this.selectedId;
+        const wireMatch = id.match(/^wire_(\d+)(?:_(?:from|to))?$/);
+        if (wireMatch) {
+            const index = parseInt(wireMatch[1], 10);
+            if (Number.isInteger(index)) {
+                this.circuitIR.wires.splice(index, 1);
+            }
+        } else {
+            const compIndex = this.circuitIR.components.findIndex(c => c.id === id);
+            if (compIndex >= 0) {
+                this.circuitIR.components.splice(compIndex, 1);
+                this.circuitIR.wires = this.circuitIR.wires.filter(
+                    w => w.from.component !== id && w.to.component !== id
+                );
+            }
+        }
+        this.selectedId = null;
+        this.rebuildOccupancy();
+        this.rebuildDraggables();
+        this.redraw();
+    }
+
+    /**
+     * Fit the whole circuit into the viewport.
+     */
+    fitToView(): void {
+        if (!this.circuitIR) return;
+        const parent = this.canvas.parentElement;
+        if (!parent) return;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const include = (x: number, y: number, w: number, h: number) => {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + w);
+            maxY = Math.max(maxY, y + h);
+        };
+
+        for (const board of this.circuitIR.boards) {
+            const geo = this.boardGeometries.get(board.id);
+            if (geo) include(geo.x, geo.y, geo.width, geo.height);
+        }
+        for (const comp of this.circuitIR.components) {
+            const { width, height } = this.getComponentDimensions(comp);
+            include(comp.position.x - 2, comp.position.y - 2, width + 4, height + 4);
+        }
+        if (!Number.isFinite(minX)) {
+            this.resetZoom();
+            return;
+        }
+
+        const rect = parent.getBoundingClientRect();
+        const screenPadding = 24;
+        const contentW = Math.max(maxX - minX, 1) * BASE_SCALE;
+        const contentH = Math.max(maxY - minY, 1) * BASE_SCALE;
+        const zoomX = (rect.width - 2 * screenPadding) / contentW;
+        const zoomY = (rect.height - 2 * screenPadding) / contentH;
+        this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(zoomX, zoomY)));
+
+        const padX = (rect.width - contentW * this.zoom) / 2;
+        const padY = (rect.height - contentH * this.zoom) / 2;
+        this.panX = padX - PADDING - minX * BASE_SCALE * this.zoom;
+        this.panY = padY - PADDING - minY * BASE_SCALE * this.zoom;
+
+        this.rebuildDraggables();
+        this.redraw();
     }
 
     resize(): void {
