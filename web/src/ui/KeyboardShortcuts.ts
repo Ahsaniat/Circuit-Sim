@@ -1,48 +1,31 @@
 /**
- * KeyboardShortcuts — Modal showing all keyboard shortcuts
+ * KeyboardShortcuts — accessible modal showing all keyboard shortcuts.
  */
-
-interface ShortcutEntry {
-    keys: string;
-    description: string;
-}
-
-const SHORTCUTS: ShortcutEntry[] = [
-    { keys: 'Ctrl + Enter', description: 'Compile circuit' },
-    { keys: 'Ctrl + S', description: 'Save circuit file' },
-    { keys: 'Ctrl + O', description: 'Open circuit file' },
-    { keys: 'Ctrl + Shift + E', description: 'Export as PNG' },
-    { keys: 'Ctrl + /', description: 'Show keyboard shortcuts' },
-    { keys: 'Ctrl + +', description: 'Zoom in' },
-    { keys: 'Ctrl + -', description: 'Zoom out' },
-    { keys: 'Ctrl + 0', description: 'Reset zoom' },
-    { keys: 'F', description: 'Fit circuit to view' },
-    { keys: 'Scroll wheel', description: 'Zoom canvas' },
-    { keys: 'Space + drag', description: 'Pan canvas' },
-    { keys: 'Middle-drag', description: 'Pan canvas' },
-    { keys: 'Pinch (touch)', description: 'Zoom canvas' },
-    { keys: 'Click + drag', description: 'Move components / wires' },
-    { keys: 'Delete', description: 'Delete selected element' },
-    { keys: 'Escape', description: 'Clear selection' },
-    { keys: 'Tab', description: 'Insert 4 spaces in editor' },
-];
+import { SHORTCUTS } from './Shortcuts';
 
 export class KeyboardShortcuts {
     private overlay: HTMLDivElement | null = null;
+    private escHandler: ((e: KeyboardEvent) => void) | null = null;
+    private lastFocused: HTMLElement | null = null;
 
     show(): void {
         if (this.overlay) return;
+
+        this.lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
         this.overlay = document.createElement('div');
         this.overlay.className = 'shortcuts-overlay';
 
         const modal = document.createElement('div');
         modal.className = 'shortcuts-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'shortcuts-title');
 
         const header = document.createElement('div');
         header.className = 'shortcuts-header';
         header.innerHTML = `
-            <h2>Keyboard Shortcuts</h2>
+            <h2 id="shortcuts-title">Keyboard Shortcuts</h2>
             <button class="shortcuts-close" aria-label="Close">&times;</button>
         `;
         modal.appendChild(header);
@@ -68,22 +51,47 @@ export class KeyboardShortcuts {
         this.overlay.addEventListener('click', (e) => {
             if (e.target === this.overlay) this.close();
         });
-        modal.querySelector('.shortcuts-close')?.addEventListener('click', () => this.close());
+        const closeBtn = modal.querySelector<HTMLButtonElement>('.shortcuts-close');
+        closeBtn?.addEventListener('click', () => this.close());
+        closeBtn?.focus();
 
-        const escHandler = (e: KeyboardEvent) => {
+        // Escape closes; Tab is trapped inside the dialog.
+        this.escHandler = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
+                e.preventDefault();
                 this.close();
-                document.removeEventListener('keydown', escHandler);
+                return;
+            }
+            if (e.key === 'Tab') {
+                const focusable = modal.querySelectorAll<HTMLElement>(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                );
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
             }
         };
-        document.addEventListener('keydown', escHandler);
+        document.addEventListener('keydown', this.escHandler);
     }
 
     close(): void {
+        if (this.escHandler) {
+            document.removeEventListener('keydown', this.escHandler);
+            this.escHandler = null;
+        }
         if (this.overlay) {
             this.overlay.remove();
             this.overlay = null;
         }
+        this.lastFocused?.focus();
+        this.lastFocused = null;
     }
 
     toggle(): void {

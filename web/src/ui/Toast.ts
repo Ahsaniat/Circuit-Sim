@@ -15,6 +15,8 @@ export class Toast {
     constructor() {
         this.container = document.createElement('div');
         this.container.className = 'toast-container';
+        this.container.setAttribute('role', 'status');
+        this.container.setAttribute('aria-live', 'polite');
         document.body.appendChild(this.container);
     }
 
