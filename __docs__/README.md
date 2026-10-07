@@ -7,7 +7,7 @@ intentionally not tracked.
 
 | Document | Contents |
 | :--- | :--- |
-| [LANGUAGE_REFERENCE.md](LANGUAGE_REFERENCE.md) | Complete DSL syntax: components, boards, `def`, `map`, values |
+| [LANGUAGE_REFERENCE.md](LANGUAGE_REFERENCE.md) | Complete DSL syntax: components, boards, scoped maps, `place`, `def`, wiring rules, errors |
 | [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) | Compiler pipeline, geometry system, renderer and data flow |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | Deep dive into each module and how they cooperate |
 | [component-library.md](component-library.md) | Component categories, footprints, shipped vs planned |

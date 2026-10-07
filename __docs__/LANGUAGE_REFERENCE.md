@@ -1,436 +1,361 @@
 # CircuitSim Language Reference
 
-CircuitSim is a domain-specific language for describing electronic circuits with real IC components and breadboard layouts.
+The complete guide to the CircuitSim DSL: every statement, every component
+keyword and the rules that connect them. The web editor and the C++ CLI
+compiler implement the same language and are verified against the same
+fixtures in `tests/conformance/`.
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Component Syntax](#component-syntax)
+1. [File structure](#file-structure)
+2. [Components](#components)
 3. [Boards](#boards)
-4. [Pin Mapping](#pin-mapping)
-5. [Built-in Components](#built-in-components)
-6. [Custom IC Definitions](#custom-ic-definitions)
-7. [Comments](#comments)
-8. [Examples](#examples)
-9. [Canvas Controls](#canvas-controls)
+4. [Wiring with map blocks](#wiring-with-map-blocks)
+5. [Choosing a board: scoped maps and place](#choosing-a-board-scoped-maps-and-place)
+6. [Cross-board connections](#cross-board-connections)
+7. [Custom ICs with def](#custom-ics-with-def)
+8. [Comments and layout metadata](#comments-and-layout-metadata)
+9. [Simulation coverage](#simulation-coverage)
+10. [Electrical rule check](#electrical-rule-check)
+11. [Error messages](#error-messages)
+12. [Complete examples](#complete-examples)
+13. [CLI usage](#cli-usage)
+14. [Canvas controls](#canvas-controls)
 
 ---
 
-## Quick Start
+## File structure
+
+A `.csim` file is a sequence of statements. Order does not matter: boards,
+components, definitions and wiring can be interleaved freely.
 
 ```
-// New syntax - use component-specific keywords
-@AND A1 7408
-@resistor R1 10k
-@led D1 red
-@board B1 breadboard_830
-
-map (
-    (A1 pin 3 -> R1 pin 1)
-    (R1 pin 2 -> D1 pin 1)
-)
-```
-
-Or use the generic syntax:
-
-```
-@comp A1 7408
-@board B1 breadboard_830
-
-map (
-    (A1 pin 3 -> B1 pin 5)
-)
+@board B1 breadboard_830        // board declaration
+@resistor R1 330                // component declaration
+def MyIC ( A -> input )         // custom IC definition
+place R1 on B1                  // explicit placement
+B1.map ( (R1 pin 1 -> B1 pin 5) )  // board-scoped wiring
+map ( (R1 pin 2 -> R2 pin 1) )     // global wiring
 ```
 
 ---
 
-## Component Syntax
+## Components
 
-CircuitSim supports two syntaxes for declaring components:
+### Type-specific keywords (recommended)
 
-### Type-Specific Keywords (Recommended)
+| Category | Keywords |
+| :--- | :--- |
+| Logic gates | `@AND` `@OR` `@NOT` `@NAND` `@NOR` `@XOR` |
+| 3-input gates | `@AND3` `@NAND3` `@NOR3` |
+| 4-input gates | `@AND4` `@NAND4` |
+| Multiplexers | `@mux_4x1` `@mux_8x1` |
+| Decoders / encoders | `@decoder_3to8` `@decoder_2to4` `@encoder_8to3` |
+| Registers / flip-flops | `@shift_reg_8` `@shift_reg_8_parallel` `@d_flipflop` `@jk_flipflop` `@latch_8` |
+| Counters | `@counter_4bit` `@counter_decade` |
+| Passives | `@resistor` `@capacitor` `@inductor` `@potentiometer` |
+| Diodes | `@diode` `@zener_diode` `@schottky_diode` |
+| LEDs / optical | `@led` `@ir_led` `@photodiode` `@ldr` |
+| Transistors | `@npn` `@pnp` `@nmos` `@pmos` |
+| Switches | `@switch_spst` `@switch_spdt` `@pushbutton` |
+| Displays / audio | `@display_7seg` `@buzzer` `@passive_buzzer` |
+| Motors / power | `@motor_dc` `@servo` `@battery` `@regulator` `@crystal` |
 
-Use `@<component_type>` for clearer, self-documenting code:
-
-```
-@<component_type> <identifier> [value_or_part_number]
-```
-
-| Syntax | Example | Description |
-|--------|---------|-------------|
-| `@resistor` | `@resistor R1 10k` | Resistor with value |
-| `@capacitor` | `@capacitor C1 100uF` | Capacitor with value |
-| `@led` | `@led D1 red` | LED (color optional) |
-| `@AND` | `@AND A1 7408` | AND gate IC |
-| `@npn` | `@npn Q1 2N2222` | NPN transistor |
-
-### Generic Syntax
-
-For custom or unrecognized components:
-
-```
-@comp <identifier> <component_type>
-```
-
-Example:
-```
-@comp U1 ATmega328P
-@comp IC1 LM7805
-```
-
----
-
-## Passive Components
-
-### Resistors, Capacitors, Inductors
+### Declaration syntax
 
 ```
-@resistor R1 10k       // 10kΩ resistor
-@resistor R2 4.7k      // 4.7kΩ resistor
-@capacitor C1 100uF    // 100µF capacitor
-@capacitor C2 0.1uF    // 100nF capacitor
-@inductor L1 10mH      // 10mH inductor
-@potentiometer P1 10k  // 10kΩ potentiometer (3 pins)
+@keyword ID [value]
 ```
 
-### Diodes
+`ID` must start with a letter or underscore. `value` is optional and keeps
+units and part numbers intact: `10k`, `4.7k`, `100uF`, `16MHz`, `2N2222`,
+`LM7805`, `red`. For gate keywords the value may also be a 74xx part number:
+`@AND A1 7408`.
+
+### Generic syntax
+
+Any built-in IC can be declared with `@comp ID TYPE`:
 
 ```
-@diode D1              // Standard diode
-@zener_diode Z1 5.1V   // 5.1V Zener diode
-@schottky_diode S1     // Schottky diode
+@comp A1 7408      // quad 2-input AND
+@comp T1 555       // timer
+@comp OA1 LM741    // op-amp
 ```
 
-### LEDs and Optical Components
+### Component values
 
-```
-@led LED1 red          // Red LED
-@led LED2 green        // Green LED
-@ir_led IR1            // Infrared LED
-@photodiode PD1        // Photodiode
-@ldr LDR1              // Light Dependent Resistor
-```
-
----
-
-## Transistors
-
-### BJT Transistors
-
-```
-@npn Q1 2N2222         // NPN transistor
-@npn Q2 BC547          // NPN transistor
-@pnp Q3 2N2907         // PNP transistor
-```
-
-### MOSFETs
-
-```
-@nmos M1 2N7000        // N-channel MOSFET
-@pmos M2 IRF9540       // P-channel MOSFET
-```
-
-Pin order: 1=Base/Gate, 2=Collector/Drain, 3=Emitter/Source
-
----
-
-## Logic Gates
-
-### 2-Input Gates (Quad packages, 14 pins)
-
-```
-@AND A1 7408           // Quad 2-input AND gate
-@AND A2                // Uses default 7408
-@OR O1 7432            // Quad 2-input OR gate
-@XOR X1 7486           // Quad 2-input XOR gate
-@NAND N1 7400          // Quad 2-input NAND gate
-@NOR NR1 7402          // Quad 2-input NOR gate
-@NOT I1 7404           // Hex inverter (NOT gate)
-```
-
-### 3-Input Gates (Triple packages, 14 pins)
-
-```
-@AND3 A1 7411          // Triple 3-input AND gate
-@NAND3 N1 7410         // Triple 3-input NAND gate
-@NOR3 NR1 7427         // Triple 3-input NOR gate
-```
-
-### 4-Input Gates (Dual packages, 14 pins)
-
-```
-@AND4 A1 7421          // Dual 4-input AND gate
-@NAND4 N1 7420         // Dual 4-input NAND gate
-```
-
----
-
-## Multiplexers and Decoders
-
-### Multiplexers
-
-```
-@mux_4x1 M1 74153      // Dual 4-to-1 multiplexer
-@mux_8x1 M2 74151      // 8-to-1 multiplexer
-```
-
-### Decoders and Encoders
-
-```
-@decoder_3to8 D1 74138 // 3-to-8 line decoder
-@decoder_2to4 D2 74139 // Dual 2-to-4 line decoder
-@encoder_8to3 E1 74148 // 8-to-3 priority encoder
-```
-
----
-
-## Shift Registers and Flip-Flops
-
-### Shift Registers
-
-```
-@shift_reg_8 SR1 74164          // 8-bit serial-in parallel-out
-@shift_reg_8_parallel SR2 74165 // 8-bit parallel-in serial-out
-```
-
-### Flip-Flops and Latches
-
-```
-@d_flipflop FF1 7474   // Dual D flip-flop
-@jk_flipflop FF2 7476  // Dual JK flip-flop
-@latch_8 L1 74373      // Octal transparent latch
-```
-
-### Counters
-
-```
-@counter_4bit C1 74161   // 4-bit binary counter
-@counter_decade C2 7490  // Decade counter
-```
+| Component | Example | Notes |
+| :--- | :--- | :--- |
+| `@resistor` | `@resistor R1 10k` | Ω, `k`, `M` suffixes preserved |
+| `@capacitor` | `@capacitor C1 100uF` | Unit suffix preserved |
+| `@inductor` | `@inductor L1 10mH` | Unit suffix preserved |
+| `@crystal` | `@crystal Y1 16MHz` | Frequency preserved |
+| `@led` | `@led LED1 red` | Colour name preserved |
+| `@npn` / `@pnp` | `@npn Q1 2N2222` | Part number preserved |
+| `@battery` | `@battery BAT1 9V` | Voltage preserved |
 
 ---
 
 ## Boards
 
-### Syntax
+### Declaration
 
 ```
-@board <identifier> <board_type>
+@board ID TYPE
 ```
 
-### Supported Board Types
+| Board type | Connection points |
+| :--- | :--- |
+| `breadboard_830` | 830 |
+| `breadboard_400` | 400 |
+| `breadboard_170` | 170 |
 
-| Type | Description |
-|------|-------------|
-| `breadboard_830` | Standard 830-point breadboard (63 columns, 10 rows) |
-| `breadboard_400` | Half-size 400-point breadboard |
-| `breadboard_170` | Mini 170-point breadboard |
+Multiple boards are laid out side by side and are electrically independent
+unless a jumper wire connects them.
 
-### Breadboard Layout
+### Board pin numbering
 
-```
-     1   2   3   4   5  ...  63
-   +-----------------------------+
-   |  + Power Rail               |
-   +-----------------------------+
- A |  o   o   o   o   o  ...  o  |
- B |  o   o   o   o   o  ...  o  |  Top Half
- C |  o   o   o   o   o  ...  o  |  (rows A-E shorted)
- D |  o   o   o   o   o  ...  o  |
- E |  o   o   o   o   o  ...  o  |
-   +=============================+  Center Channel
- F |  o   o   o   o   o  ...  o  |
- G |  o   o   o   o   o  ...  o  |  Bottom Half
- H |  o   o   o   o   o  ...  o  |  (rows F-J shorted)
- I |  o   o   o   o   o  ...  o  |
- J |  o   o   o   o   o  ...  o  |
-   +-----------------------------+
-   |  - Power Rail               |
-   +-----------------------------+
-```
+Board pins address a physical hole:
 
-- Holes in the same column within each half are electrically connected
-- ICs straddle the center channel with pins in rows E and F
+| Pin N | Column | Row |
+| :--- | :--- | :--- |
+| 1 … 63 | N | D (top half) |
+| 64 … 126 | N − 63 | G (bottom half) |
+
+Example: `B1 pin 5` is column 5, row D on board B1. `B1 pin 68` is column 5,
+row G.
+
+> **One wire per board pin.** A board pin is a single hole, so two separate
+> connections may not use the same `Bx pin N`. To fan a signal out, wire the
+> components to each other, or use different pins in the same column
+> half — all five rows of a column half are one electrical node.
+
+### Electrical model
+
+| Region | Connectivity |
+| :--- | :--- |
+| Rows A–E of a column | One node |
+| Rows F–J of a column | One node |
+| Top/bottom `+` rail | Full-width bus, driven high |
+| Top/bottom `−` rail | Full-width bus, driven low |
 
 ---
 
-## Pin Mapping
-
-### Syntax
+## Wiring with map blocks
 
 ```
 map (
-    (<source> -> <destination>, <destination>, ...)
-    (<source> -> <destination>)
-    ...
+    (SRC pin N -> DST pin M)
+    (SRC pin N -> DST1 pin M1, DST2 pin M2)
 )
 ```
 
-### Pin Reference
+| Element | Meaning |
+| :--- | :--- |
+| `(A -> B)` | One connection |
+| `->` | Direction of the wire (drawn from source to destination) |
+| `,` | Several destinations for one source |
+| Several `map` blocks | Allowed; their connections are merged |
 
-```
-<component_id> pin <pin_number>
-```
-
-### Examples
-
-```
-// Single connection
-map (
-    (A1 pin 3 -> B1 pin 5)
-)
-
-// Multiple destinations from one source
-map (
-    (A1 pin 3 -> U2 pin 1, U2 pin 2, B1 pin 10)
-)
-
-// Multiple connections
-map (
-    (A1 pin 1 -> B1 pin 5)
-    (A1 pin 2 -> B1 pin 6)
-    (A1 pin 3 -> U2 pin 1)
-    (U2 pin 3 -> B1 pin 15)
-)
-```
-
-### Pin Numbering for DIP ICs
-
-```
-        Notch
-          U
-    +-----+-----+
-  1 |o          | 14
-  2 |           | 13
-  3 |           | 12
-  4 |   7408    | 11
-  5 |           | 10
-  6 |           | 9
-  7 |           | 8
-    +-----------+
-```
-
-In CircuitSim's horizontal layout:
-- Pins 1-7 are on the top row (left to right)
-- Pins 8-14 are on the bottom row (right to left)
+Wires may reference components, board pins, or both in the same connection.
 
 ---
 
-## Built-in Components
+## Choosing a board: scoped maps and place
 
-### 74xx Series Logic ICs
+Components are placed on a board in one of three ways:
 
-| Part Number | Description | Pins |
-|-------------|-------------|------|
-| `7400` | Quad 2-input NAND gate | 14 |
-| `7402` | Quad 2-input NOR gate | 14 |
-| `7404` | Hex inverter | 14 |
-| `7408` | Quad 2-input AND gate | 14 |
-| `7410` | Triple 3-input NAND gate | 14 |
-| `7411` | Triple 3-input AND gate | 14 |
-| `7420` | Dual 4-input NAND gate | 14 |
-| `7421` | Dual 4-input AND gate | 14 |
-| `7427` | Triple 3-input NOR gate | 14 |
-| `7432` | Quad 2-input OR gate | 14 |
-| `7447` | BCD to 7-segment decoder | 16 |
-| `7474` | Dual D flip-flop | 14 |
-| `7476` | Dual JK flip-flop | 16 |
-| `7486` | Quad 2-input XOR gate | 14 |
-| `7490` | Decade counter | 14 |
-| `74138` | 3-to-8 line decoder | 16 |
-| `74139` | Dual 2-to-4 line decoder | 16 |
-| `74148` | 8-to-3 priority encoder | 16 |
-| `74151` | 8-to-1 multiplexer | 16 |
-| `74153` | Dual 4-to-1 multiplexer | 16 |
-| `74161` | 4-bit binary counter | 16 |
-| `74164` | 8-bit shift register (SIPO) | 14 |
-| `74165` | 8-bit shift register (PISO) | 16 |
-| `74173` | 4-bit D register | 16 |
-| `74181` | 4-bit ALU | 24 |
-| `74245` | Octal bus transceiver | 20 |
-| `74373` | Octal transparent latch | 20 |
-| `74374` | Octal D flip-flop | 20 |
+| Method | Syntax | Rule |
+| :--- | :--- | :--- |
+| Default | *(nothing)* | Unreferenced components go to the first declared board |
+| Scoped map | `B1.map ( ... )` | Every component the block **first references** is placed on B1 |
+| Explicit | `place R1, LED1 on B2` | Authoritative, regardless of statement order |
 
-### Timer ICs
+### Scoped map rules
 
-| Part Number | Description | Pins |
-|-------------|-------------|------|
-| `555` / `NE555` | Timer IC | 8 |
+1. A component referenced by `B1.map` that has no board yet is assigned to B1.
+2. If the same component is first referenced by two different scoped maps
+   (`B1.map` and `B2.map`) without an explicit `place`, the compiler reports
+   an ambiguity error — use `place` to decide.
+3. A component already assigned elsewhere may still appear in another scoped
+   map; that reference is simply a cross-board wire.
+4. `B1 map ( ... )` (without the dot) is accepted as an alias of `B1.map`.
 
-### Operational Amplifiers
+### place rules
 
-| Part Number | Description | Pins |
-|-------------|-------------|------|
-| `741` / `LM741` | General purpose op-amp | 8 |
-| `LM358` | Dual op-amp | 8 |
-
----
-
-## Custom IC Definitions
-
-### Syntax
+1. `place` overrides scoped-map assignment regardless of position in the file.
+2. Two `place` statements disagreeing about the board are an error.
+3. The board must be declared; the components must exist.
 
 ```
-def <ic_name> (
-    <pin_name> -> <pin_type>,
-    <pin_name> -> <pin_type>,
-    ...
-)
-```
-
-### Pin Types
-
-| Type | Description |
-|------|-------------|
-| `input` | Input pin |
-| `output` | Output pin |
-| `gnd` | Ground connection |
-| `vcc` | Power supply |
-
-### Example
-
-```
-def MyGate (
-    in1 -> input,
-    in2 -> input,
-    out1 -> output,
-    gnd -> gnd,
-    vcc -> vcc
-)
-
-@comp G1 MyGate
-```
-
----
-
-## Comments
-
-Single-line comments start with `//`:
-
-```
-// This is a comment
-@AND A1 7408  // Inline comment
-```
-
----
-
-## Examples
-
-### Example 1: LED with Current Limiting Resistor
-
-```
-@AND A1 7408
+@board B1 breadboard_830
+@board B2 breadboard_830
 @resistor R1 330
-@led D1 red
+@resistor R2 330
+
+place R1 on B1
+place R2 on B2
+```
+
+---
+
+## Cross-board connections
+
+A wire may connect any two points, including across boards. The compiler
+draws it as a jumper and the simulator treats it as a conductor.
+
+```
+// component on B1 to component on B2
+map ( (R1 pin 2 -> R2 pin 1) )
+
+// component on B1 to a pin on B2
+B1.map ( (R1 pin 1 -> B2 pin 5) )
+
+// board pin to board pin (single hole each)
+map ( (B1 pin 10 -> B2 pin 10) )
+```
+
+To power a second board, jumper from a component on the first board (for
+example a battery pin) directly to a component on the second board — see
+[Example 2](#example-2-two-boards-with-a-jumper).
+
+---
+
+## Custom ICs with def
+
+```
+def NAME (
+    pinName -> input,
+    pinName -> output,
+    pinName -> gnd,
+    pinName -> vcc
+)
+
+@comp M1 NAME
+```
+
+| Pin type | Meaning |
+| :--- | :--- |
+| `input` | Drives nothing; read by the IC |
+| `output` | Drives the net; used for output-contention checks |
+| `gnd` | Ground reference |
+| `vcc` | Power reference |
+
+Rules: pin count comes from the definition; redefining a built-in IC number
+is an error; pin names feed tooltips, ERC and the simulator.
+
+---
+
+## Comments and layout metadata
+
+| Syntax | Purpose |
+| :--- | :--- |
+| `// text` | Comment, ignored by the compiler |
+| `//!layout: {json}` | Canvas layout metadata written by the editor; ignored by the compiler, re-applied on load |
+
+---
+
+## Simulation coverage
+
+The simulator extracts a netlist from the physical layout and evaluates to a
+fixed point with values `0`, `1`, `X` (unknown or conflict) and `Z`
+(floating).
+
+| Status | Components |
+| :--- | :--- |
+| Modelled | 7400, 7402, 7404, 7408, 7410, 7411, 7420, 7421, 7427, 7432, 7486, LEDs, buzzers, resistors, inductors, open switches, batteries |
+| Reported unsupported | 555, counters, flip-flops, op-amps, displays |
+
+Notes: floating or unknown inputs propagate `X`; series resistors conduct
+logic levels; closed switches short their pins (set programmatically);
+oscillating circuits are reported as unstable instead of hanging.
+
+---
+
+## Electrical rule check
+
+| Severity | Rule |
+| :--- | :--- |
+| Error | Net driven both high and low (short circuit) |
+| Error | Two outputs driving the same net |
+| Warning | IC power pins not connected to a supply |
+| Warning | LED without a series resistor |
+| Warning | Unconnected two-pin component |
+| Info | No wired power source |
+| Info | IC without a simulation model |
+
+---
+
+## Error messages
+
+| Message | Cause |
+| :--- | :--- |
+| `Unknown directive '@x'` | Typo or unsupported `@keyword` |
+| `Unexpected token 'x'` | Stray text outside any statement |
+| `Unexpected character 'x'` | Character outside the grammar (for example `;`) |
+| `Duplicate component declaration` / `Duplicate board declaration` | Same ID twice |
+| `Undefined component: 'X'` | Reference to an undeclared ID |
+| `Invalid pin number N for 'X'` | Pin outside the component's range |
+| `Pin N on board 'X' is already connected` | Two wires on one board pin |
+| `Unknown board: 'X'` | Scoped map or `place` names an undeclared board |
+| `Component 'X' is referenced by both ...` | Two scoped maps claim the same component |
+| `Component 'X' is already placed on 'Y'` | Conflicting `place` statements |
+| `Cannot redefine built-in IC` | `def` with a built-in number |
+| `Duplicate IC definition` | Two `def` blocks with the same name |
+| `Unknown component type` | `@comp` with an undeclared type |
+
+---
+
+## Complete examples
+
+### Example 1: single board, LED indicator
+
+```
+@battery BAT1 9V
+@resistor R1 330
+@led LED1 red
 @board B1 breadboard_830
 
 map (
-    (A1 pin 3 -> R1 pin 1)    // AND gate output to resistor
-    (R1 pin 2 -> D1 pin 1)    // Resistor to LED anode
+    (BAT1 pin 1 -> R1 pin 1)
+    (R1 pin 2 -> LED1 pin 1)
+    (BAT1 pin 2 -> LED1 pin 2)
 )
 ```
 
-### Example 2: Logic Gate Chain
+### Example 2: two boards with a jumper
+
+```
+@board B1 breadboard_830
+@board B2 breadboard_830
+
+@battery BAT1 9V
+@resistor R1 330
+@led LED1 red
+place BAT1, R1, LED1 on B1
+
+B1.map (
+    (BAT1 pin 1 -> R1 pin 1)
+    (R1 pin 2 -> LED1 pin 1)
+    (BAT1 pin 2 -> LED1 pin 2)
+)
+
+@resistor R2 330
+@led LED2 red
+place R2, LED2 on B2
+
+B2.map (
+    (R2 pin 2 -> LED2 pin 1)
+)
+
+// Cross-board jumpers: power to B2 and a shared ground
+map (
+    (BAT1 pin 1 -> R2 pin 1)
+    (LED1 pin 2 -> LED2 pin 2)
+)
+```
+
+### Example 3: logic chain on one board
 
 ```
 @AND A1 7408
@@ -439,111 +364,60 @@ map (
 @board B1 breadboard_830
 
 map (
-    (A1 pin 3 -> O1 pin 1)    // AND output to OR input
-    (A1 pin 6 -> O1 pin 2)    // Another AND output
-    (O1 pin 3 -> I1 pin 1)    // OR output to inverter
+    (A1 pin 3 -> O1 pin 1)
+    (A1 pin 6 -> O1 pin 2)
+    (O1 pin 3 -> I1 pin 1)
 )
 ```
 
-### Example 3: Transistor Switch
+### Example 4: custom IC
 
 ```
-@npn Q1 2N2222
-@resistor R1 1k
-@resistor R2 10k
-@led D1 green
+def HalfAdder (
+    A -> input,
+    B -> input,
+    Sum -> output,
+    Carry -> output
+)
+
+@comp HA1 HalfAdder
 @board B1 breadboard_830
 
 map (
-    (R2 pin 2 -> Q1 pin 1)    // Base resistor to transistor
-    (Q1 pin 2 -> R1 pin 1)    // Collector to LED resistor
-    (R1 pin 2 -> D1 pin 1)    // Resistor to LED
-)
-```
-
-### Example 4: 8-to-1 Multiplexer
-
-```
-@mux_8x1 M1 74151
-@AND A1 7408
-@board B1 breadboard_830
-
-map (
-    (A1 pin 3 -> M1 pin 4)    // AND output to mux data input
-    (M1 pin 5 -> B1 pin 30)   // Mux output
-)
-```
-
-### Example 5: Shift Register with LED Display
-
-```
-@shift_reg_8 SR1 74164
-@resistor R1 330
-@resistor R2 330
-@led D1 red
-@led D2 green
-@board B1 breadboard_830
-
-map (
-    (SR1 pin 3 -> R1 pin 1)   // Q0 output
-    (R1 pin 2 -> D1 pin 1)
-    (SR1 pin 4 -> R2 pin 1)   // Q1 output
-    (R2 pin 2 -> D2 pin 1)
+    (HA1 pin 1 -> HA1 pin 3)
+    (HA1 pin 2 -> HA1 pin 4)
 )
 ```
 
 ---
 
-## Canvas Controls
-
-### Mouse Controls
-
-| Action | Control |
-|--------|---------|
-| **Zoom** | Mouse wheel (centered on cursor) |
-| **Select component** | Left click on component |
-| **Drag component** | Click and drag |
-| **Drag board** | Click and drag on breadboard (moves all components) |
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Enter` | Compile code |
-
----
-
-## Error Messages
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `Duplicate component declaration` | Same identifier used twice | Use unique identifiers |
-| `Unknown component type` | Component keyword not recognized | Check spelling or use `@comp` |
-| `Undefined component` | Reference to undeclared component | Declare component first |
-| `Invalid pin number` | Pin number exceeds component's pin count | Check component datasheet |
-| `Expected '(' after map` | Missing parenthesis | Add opening parenthesis |
-
----
-
-## File Extension
-
-CircuitSim source files use the `.csim` extension:
-
-```
-my_circuit.csim
-```
-
----
-
-## Command Line Usage
+## CLI usage
 
 ```bash
-# Compile and output JSON
-circuitsim circuit.csim
+# Compile a file to JSON
+./build/circuitsim circuit.csim
 
-# Output JSON only (no debug info)
-circuitsim --json-only circuit.csim
+# JSON only, no informational output
+./build/circuitsim --json-only circuit.csim
 
 # Read from stdin
-echo "@AND A1 7408" | circuitsim --json-only
+cat circuit.csim | ./build/circuitsim --json-only
 ```
+
+---
+
+## Canvas controls
+
+| Input | Action |
+| :--- | :--- |
+| Click + drag | Move a component, wire or board |
+| Drag a wire endpoint | Re-route with magnetic snapping |
+| Delete / Backspace | Delete the selection |
+| Escape | Clear selection |
+| Space + drag, middle-drag | Pan |
+| Scroll wheel, pinch | Zoom |
+| `F` | Fit circuit to view |
+| Ctrl + Z / Ctrl + Shift + Z | Undo / redo canvas edits |
+| Ctrl + Enter | Compile |
+| Ctrl + S / Ctrl + O | Save / open |
+| Ctrl + Shift + E | Export PNG |

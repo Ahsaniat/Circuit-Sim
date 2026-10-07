@@ -12,7 +12,7 @@
 
 ## What it does
 
-**Compile a DSL.** Declare components and connections in a readable syntax; the compiler resolves IC pinouts, places parts on the breadboard and routes the wires.
+**Compile a DSL.** Declare components and connections in a readable syntax; the compiler resolves IC pinouts, places parts on the breadboard and routes the wires. Multiple breadboards are supported, each with its own components, joined by jumper wires.
 
 **Simulate the result.** Toggle Simulate and the canvas comes alive: wires turn green for logic high and blue for logic low, LEDs glow, buzzers show sound arcs, and oscillating circuits are reported instead of hanging.
 
@@ -70,10 +70,15 @@ map (
 | Concept | Syntax | Notes |
 | :--- | :--- | :--- |
 | Component | `@keyword ID [value]` | Values keep their units: `10k`, `4.7k`, `100uF`, `16MHz` |
-| Board | `@board ID breadboard_830` | 830-point breadboard (400 and 170 also accepted) |
-| Connection | `(SRC pin N -> DST pin M, ...)` | Multiple destinations per source |
+| Board | `@board ID breadboard_830` | 830, 400 and 170-point breadboards; several boards sit side by side |
+| Connection | `(SRC pin N -> DST pin M, ...)` | Multiple destinations per source; cross-board jumpers allowed |
+| Board scoping | `B1.map ( ... )` | Components first referenced in the block are placed on B1 |
+| Explicit placement | `place R1, LED1 on B2` | Authoritative over scoped maps |
 | Custom IC | `def MyIC (A -> input, B -> output)` | Pin names and directions feed tooltips and ERC |
 | Comments | `// ...` | Layout metadata is stored in a trailing `//!layout:` comment |
+
+**Full syntax, every keyword and the board/wiring rules live in the
+[Language Reference](__docs__/LANGUAGE_REFERENCE.md).**
 
 <details>
 <summary><b>Component keywords</b></summary>
