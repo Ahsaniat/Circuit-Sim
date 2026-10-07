@@ -1,7 +1,36 @@
 /**
  * ComponentLibrary — Categorized component palette with search, working
  * collapse-all, click-to-insert and drag-to-canvas.
+ *
+ * Category icons come from Tabler Icons (MIT): https://tabler.io/icons
  */
+import cpuIcon from '@tabler/icons/outline/cpu.svg?raw';
+import waveSineIcon from '@tabler/icons/outline/wave-sine.svg?raw';
+import binaryIcon from '@tabler/icons/outline/binary.svg?raw';
+import layoutGridIcon from '@tabler/icons/outline/layout-grid.svg?raw';
+import resistorIcon from '@tabler/icons/outline/circuit-resistor.svg?raw';
+import diodeIcon from '@tabler/icons/outline/circuit-diode.svg?raw';
+import changeoverIcon from '@tabler/icons/outline/circuit-changeover.svg?raw';
+import switchIcon from '@tabler/icons/outline/circuit-switch-open.svg?raw';
+import speakerIcon from '@tabler/icons/outline/device-speaker.svg?raw';
+import motorIcon from '@tabler/icons/outline/circuit-motor.svg?raw';
+import brightnessIcon from '@tabler/icons/outline/brightness.svg?raw';
+import gridDotsIcon from '@tabler/icons/outline/grid-dots.svg?raw';
+
+const CATEGORY_ICONS: Record<string, string> = {
+    'Logic ICs': cpuIcon,
+    'Timers & Op-Amps': waveSineIcon,
+    'Flip-Flops & Counters': binaryIcon,
+    'Decoders & Mux': layoutGridIcon,
+    'Passive': resistorIcon,
+    'Diodes & LEDs': diodeIcon,
+    'Transistors': changeoverIcon,
+    'Switches': switchIcon,
+    'Displays & Audio': speakerIcon,
+    'Motors & Power': motorIcon,
+    'Sensors': brightnessIcon,
+    'Board': gridDotsIcon,
+};
 
 interface ComponentEntry {
     keyword: string;
@@ -16,7 +45,7 @@ interface ComponentCategory {
     entries: ComponentEntry[];
 }
 
-const COMPONENT_CATEGORIES: ComponentCategory[] = [
+export const COMPONENT_CATEGORIES: ComponentCategory[] = [
     {
         name: 'Logic ICs',
         icon: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="3" width="12" height="10" rx="1"/></svg>',
@@ -247,8 +276,9 @@ export class ComponentLibrary {
 
         const headerBtn = document.createElement('button');
         headerBtn.className = `comp-lib-cat-header${isExpanded ? ' expanded' : ''}`;
+        const icon = CATEGORY_ICONS[category.name] ?? category.icon;
         headerBtn.innerHTML = `
-            <span class="comp-lib-cat-icon">${category.icon}</span>
+            <span class="comp-lib-cat-icon">${icon}</span>
             <span class="comp-lib-cat-name">${category.name}</span>
             <span class="comp-lib-cat-count">${category.entries.length}</span>
             <span class="comp-lib-cat-arrow">

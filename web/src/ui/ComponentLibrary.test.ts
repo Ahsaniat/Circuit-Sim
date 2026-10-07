@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { filterCategories } from './ComponentLibrary';
+import { COMPONENT_CATEGORIES, filterCategories } from './ComponentLibrary';
+
+describe('category icons', () => {
+    it('ships a real SVG for every category', () => {
+        expect(COMPONENT_CATEGORIES.length).toBeGreaterThan(0);
+        for (const category of COMPONENT_CATEGORIES) {
+            expect(category.icon).toContain('<svg');
+        }
+    });
+});
 
 const CATEGORIES = [
     {
