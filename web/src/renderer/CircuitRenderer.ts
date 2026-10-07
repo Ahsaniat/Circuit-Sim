@@ -3,6 +3,7 @@ import { BreadboardGeometry, HolePosition } from '../geometry/BreadboardGeometry
 import { getComponentFootprint } from '../geometry/ComponentFootprints';
 import { SnapManager } from '../geometry/SnapManager';
 import { CircuitHistory } from '../history/CircuitHistory';
+import { buildSvg } from '../export/SvgExporter';
 
 const BASE_SCALE = 4;  // Pixels per base unit
 const PADDING = 20;
@@ -782,26 +783,12 @@ export class CircuitRenderer {
         const parent = this.canvas.parentElement;
         if (!parent) return;
 
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        const include = (x: number, y: number, w: number, h: number) => {
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x + w);
-            maxY = Math.max(maxY, y + h);
-        };
-
-        for (const board of this.circuitIR.boards) {
-            const geo = this.boardGeometries.get(board.id);
-            if (geo) include(geo.x, geo.y, geo.width, geo.height);
-        }
-        for (const comp of this.circuitIR.components) {
-            const { width, height } = this.getComponentDimensions(comp);
-            include(comp.position.x - 2, comp.position.y - 2, width + 4, height + 4);
-        }
-        if (!Number.isFinite(minX)) {
+        const bounds = this.getContentBounds();
+        if (!bounds) {
             this.resetZoom();
             return;
         }
+        const { minX, minY, maxX, maxY } = bounds;
 
         const rect = parent.getBoundingClientRect();
         const screenPadding = 24;
@@ -1142,6 +1129,18 @@ export class CircuitRenderer {
         this.ctx.translate(PADDING + this.panX, PADDING + this.panY);
         this.ctx.scale(this.zoom, this.zoom);
         
+        this.drawScene();
+        
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw the scene with the current context and transform. Shared by the
+     * interactive canvas and the offscreen export path.
+     */
+    private drawScene(): void {
+        if (!this.circuitIR) return;
+
         for (const board of this.circuitIR.boards) {
             this.renderBoard(board);
         }
@@ -1158,8 +1157,30 @@ export class CircuitRenderer {
         for (const comp of this.circuitIR.components) {
             this.renderComponent(comp);
         }
-        
-        this.ctx.restore();
+    }
+
+    /**
+     * Bounds of all boards and components in base units.
+     */
+    private getContentBounds(): { minX: number; minY: number; maxX: number; maxY: number } | null {
+        if (!this.circuitIR) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const include = (x: number, y: number, w: number, h: number) => {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + w);
+            maxY = Math.max(maxY, y + h);
+        };
+
+        for (const board of this.circuitIR.boards) {
+            const geo = this.boardGeometries.get(board.id);
+            if (geo) include(geo.x, geo.y, geo.width, geo.height);
+        }
+        for (const comp of this.circuitIR.components) {
+            const { width, height } = this.getComponentDimensions(comp);
+            include(comp.position.x - 2, comp.position.y - 2, width + 4, height + 4);
+        }
+        return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
     }
     
     /**
@@ -2578,7 +2599,69 @@ export class CircuitRenderer {
         this.ctx.closePath();
     }
 
-    exportCanvas(callback: (blob: Blob | null) => void): void {
-        this.canvas.toBlob(callback, 'image/png', 1.0);
+    /**
+     * Export the whole circuit (not just the viewport) as a PNG.
+     * Renders offscreen with a fit-to-content transform at the given scale.
+     */
+    exportCanvas(callback: (blob: Blob | null) => void, scale = 2): void {
+        const bounds = this.getContentBounds();
+        if (!this.circuitIR || !bounds) {
+            callback(null);
+            return;
+        }
+
+        const contentW = Math.max(bounds.maxX - bounds.minX, 1) * BASE_SCALE;
+        const contentH = Math.max(bounds.maxY - bounds.minY, 1) * BASE_SCALE;
+        const width = Math.ceil(contentW * scale + 2 * PADDING);
+        const height = Math.ceil(contentH * scale + 2 * PADDING);
+
+        const offscreen = document.createElement('canvas');
+        offscreen.width = width;
+        offscreen.height = height;
+        const ctx = offscreen.getContext('2d');
+        if (!ctx) {
+            callback(null);
+            return;
+        }
+
+        this.refreshPalette();
+        ctx.fillStyle = this.palette.canvasBg;
+        ctx.fillRect(0, 0, width, height);
+
+        // Swap context and camera for the export render, then restore.
+        const prevCtx = this.ctx;
+        const prevZoom = this.zoom;
+        const prevPanX = this.panX;
+        const prevPanY = this.panY;
+        const prevSelected = this.selectedId;
+        const prevPreview = this.snapPreviewHoles;
+
+        this.ctx = ctx;
+        this.zoom = scale;
+        this.panX = -bounds.minX * BASE_SCALE * scale;
+        this.panY = -bounds.minY * BASE_SCALE * scale;
+        this.selectedId = null;
+        this.snapPreviewHoles = [];
+
+        ctx.save();
+        ctx.translate(PADDING + this.panX, PADDING + this.panY);
+        ctx.scale(this.zoom, this.zoom);
+        this.drawScene();
+        ctx.restore();
+
+        this.ctx = prevCtx;
+        this.zoom = prevZoom;
+        this.panX = prevPanX;
+        this.panY = prevPanY;
+        this.selectedId = prevSelected;
+        this.snapPreviewHoles = prevPreview;
+
+        offscreen.toBlob(callback, 'image/png');
+    }
+
+    /** Export the whole circuit as a standalone SVG document. */
+    exportSVG(): string | null {
+        if (!this.circuitIR) return null;
+        return buildSvg(this.circuitIR, this.boardGeometries);
     }
 }

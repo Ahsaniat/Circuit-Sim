@@ -169,6 +169,7 @@ class App {
         document.getElementById('save-btn')?.addEventListener('click', () => this.save());
         document.getElementById('load-btn')?.addEventListener('click', () => this.fileManager.openFile());
         document.getElementById('export-btn')?.addEventListener('click', () => this.exportPNG());
+        document.getElementById('svg-btn')?.addEventListener('click', () => this.exportSVG());
         document.getElementById('shortcuts-btn')?.addEventListener('click', () => this.shortcuts.toggle());
         document.getElementById('undo-btn')?.addEventListener('click', () => {
             this.renderer.undo();
@@ -290,16 +291,8 @@ class App {
                     this.statusBar.setStatus('Export failed', 'error');
                     return;
                 }
-                const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0].replace('T', '-');
-                const filename = `circuit-${timestamp}.png`;
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+                const filename = `circuit-${this.timestamp()}.png`;
+                this.downloadBlob(blob, filename);
                 this.toast.success(`Exported: ${filename}`);
                 this.statusBar.setStatus('Exported', 'success');
             });
@@ -307,6 +300,36 @@ class App {
             this.toast.error(`Export error: ${err}`);
             this.statusBar.setStatus('Export failed', 'error');
         }
+    }
+
+    private exportSVG(): void {
+        try {
+            const svg = this.renderer.exportSVG();
+            if (!svg) {
+                this.toast.error('Nothing to export');
+                return;
+            }
+            const filename = `circuit-${this.timestamp()}.svg`;
+            this.downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), filename);
+            this.toast.success(`Exported: ${filename}`);
+        } catch (err) {
+            this.toast.error(`Export error: ${err}`);
+        }
+    }
+
+    private downloadBlob(blob: Blob, filename: string): void {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    private timestamp(): string {
+        return new Date().toISOString().replace(/[-:]/g, '').split('.')[0].replace('T', '-');
     }
 
     private syncZoom(): void {
