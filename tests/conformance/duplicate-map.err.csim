@@ -1,0 +1,9 @@
+@comp A1 7408
+
+map (
+    (A1 pin 1 -> A1 pin 2)
+)
+
+map (
+    (A1 pin 3 -> A1 pin 4)
+)

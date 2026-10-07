@@ -122,6 +122,17 @@ bool Parser::isComponentKeyword(TokenType type) const {
         case TokenType::LATCH_8:
         case TokenType::COUNTER_4BIT:
         case TokenType::COUNTER_DECADE:
+        case TokenType::SWITCH_SPST:
+        case TokenType::SWITCH_SPDT:
+        case TokenType::PUSHBUTTON:
+        case TokenType::DISPLAY_7SEG:
+        case TokenType::BUZZER:
+        case TokenType::PASSIVE_BUZZER:
+        case TokenType::MOTOR_DC:
+        case TokenType::SERVO:
+        case TokenType::BATTERY:
+        case TokenType::REGULATOR:
+        case TokenType::CRYSTAL:
             return true;
         default:
             return false;
@@ -176,6 +187,17 @@ std::string Parser::getComponentTypeFromKeyword(TokenType type) const {
         case TokenType::LATCH_8: return "latch_8";
         case TokenType::COUNTER_4BIT: return "counter_4bit";
         case TokenType::COUNTER_DECADE: return "counter_decade";
+        case TokenType::SWITCH_SPST: return "switch_spst";
+        case TokenType::SWITCH_SPDT: return "switch_spdt";
+        case TokenType::PUSHBUTTON: return "pushbutton";
+        case TokenType::DISPLAY_7SEG: return "display_7seg";
+        case TokenType::BUZZER: return "buzzer";
+        case TokenType::PASSIVE_BUZZER: return "passive_buzzer";
+        case TokenType::MOTOR_DC: return "motor_dc";
+        case TokenType::SERVO: return "servo";
+        case TokenType::BATTERY: return "battery";
+        case TokenType::REGULATOR: return "regulator";
+        case TokenType::CRYSTAL: return "crystal";
         default: return "unknown";
     }
 }

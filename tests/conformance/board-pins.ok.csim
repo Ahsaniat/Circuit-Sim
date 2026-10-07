@@ -1,0 +1,6 @@
+@comp A1 7408
+@board B1 breadboard_830
+
+map (
+    (A1 pin 3 -> B1 pin 500)
+)

@@ -111,6 +111,19 @@ void SemanticAnalyzer::initBuiltinICs() {
     // Counters
     builtinICs_["counter_4bit"] = {"counter_4bit", 16, {}};    // 74161
     builtinICs_["counter_decade"] = {"counter_decade", 14, {}}; // 7490
+
+    // Extended components (parity with the web compiler)
+    builtinICs_["switch_spst"] = {"switch_spst", 2, {}};
+    builtinICs_["switch_spdt"] = {"switch_spdt", 3, {}};
+    builtinICs_["pushbutton"] = {"pushbutton", 4, {}};
+    builtinICs_["display_7seg"] = {"display_7seg", 10, {}};
+    builtinICs_["buzzer"] = {"buzzer", 2, {}};
+    builtinICs_["passive_buzzer"] = {"passive_buzzer", 2, {}};
+    builtinICs_["motor_dc"] = {"motor_dc", 2, {}};
+    builtinICs_["servo"] = {"servo", 3, {}};
+    builtinICs_["battery"] = {"battery", 2, {}};
+    builtinICs_["regulator"] = {"regulator", 3, {}};
+    builtinICs_["crystal"] = {"crystal", 2, {}};
 }
 
 void SemanticAnalyzer::reportError(const std::string& message, SourceLocation loc) {

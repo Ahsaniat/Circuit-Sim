@@ -286,6 +286,51 @@ Token Lexer::scanAtKeyword() {
         return makeToken(TokenType::COUNTER_DECADE, "@counter_decade");
     }
     
+    // Switches
+    if (keyword == "switch_spst") {
+        return makeToken(TokenType::SWITCH_SPST, "@switch_spst");
+    }
+    if (keyword == "switch_spdt") {
+        return makeToken(TokenType::SWITCH_SPDT, "@switch_spdt");
+    }
+    if (keyword == "pushbutton") {
+        return makeToken(TokenType::PUSHBUTTON, "@pushbutton");
+    }
+    
+    // Displays
+    if (keyword == "display_7seg") {
+        return makeToken(TokenType::DISPLAY_7SEG, "@display_7seg");
+    }
+    
+    // Buzzers
+    if (keyword == "buzzer") {
+        return makeToken(TokenType::BUZZER, "@buzzer");
+    }
+    if (keyword == "passive_buzzer") {
+        return makeToken(TokenType::PASSIVE_BUZZER, "@passive_buzzer");
+    }
+    
+    // Motors
+    if (keyword == "motor_dc") {
+        return makeToken(TokenType::MOTOR_DC, "@motor_dc");
+    }
+    if (keyword == "servo") {
+        return makeToken(TokenType::SERVO, "@servo");
+    }
+    
+    // Power
+    if (keyword == "battery") {
+        return makeToken(TokenType::BATTERY, "@battery");
+    }
+    if (keyword == "regulator") {
+        return makeToken(TokenType::REGULATOR, "@regulator");
+    }
+    
+    // Crystal
+    if (keyword == "crystal") {
+        return makeToken(TokenType::CRYSTAL, "@crystal");
+    }
+    
     reportError("Unknown directive '@" + keyword + "'");
     return makeToken(TokenType::UNKNOWN, "@" + keyword);
 }

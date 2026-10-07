@@ -3,7 +3,11 @@
 // Run with:   ctest --test-dir build --output-on-failure
 #include "compiler.h"
 
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 using namespace circuitsim;
@@ -61,10 +65,29 @@ void testValuesPreserved() {
 
 void testUnknownDirectiveFails() {
     Compiler compiler;
-    auto result = compiler.compile("@pushbutton BTN1 PUSHBUTTON\n");
+    auto result = compiler.compile("@notarealdirective X1 123\n");
     CHECK(!result.success);
     CHECK_CONTAINS(result.errors, "Unknown directive");
-    CHECK_CONTAINS(result.errors, "@pushbutton");
+    CHECK_CONTAINS(result.errors, "@notarealdirective");
+}
+
+void testExtendedComponentsCompile() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@switch_spst SW1 SPST\n"
+        "@pushbutton BTN1 PUSHBUTTON\n"
+        "@display_7seg DSP1 7SEG\n"
+        "@buzzer BZ1 ACTIVE\n"
+        "@motor_dc M1 DC\n"
+        "@servo S1 SERVO\n"
+        "@battery BAT1 9V\n"
+        "@regulator VR1 LM7805\n"
+        "@crystal Y1 16MHz\n"
+        "@board B1 breadboard_830\n");
+    CHECK(result.success);
+    CHECK_CONTAINS(result.json, "switch_spst");
+    CHECK_CONTAINS(result.json, "display_7seg");
+    CHECK_CONTAINS(result.json, "battery");
 }
 
 void testDuplicateComponentFails() {
@@ -174,12 +197,43 @@ void testHighBoardPinCompiles() {
     CHECK_CONTAINS(result.json, "\"B1\"");
 }
 
+// Shared fixtures also executed by the web compiler test suite
+// (web/src/compiler/conformance.test.ts). File suffix decides the expected
+// outcome: .ok.csim must compile, .err.csim must fail.
+void testConformanceFixtures() {
+#ifdef CONFORMANCE_DIR
+    namespace fs = std::filesystem;
+    std::vector<std::string> files;
+    for (const auto& entry : fs::directory_iterator(CONFORMANCE_DIR)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".csim") {
+            files.push_back(entry.path().string());
+        }
+    }
+    std::sort(files.begin(), files.end());
+    CHECK(!files.empty());
+
+    for (const auto& path : files) {
+        std::ifstream file(path);
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        Compiler compiler;
+        auto result = compiler.compile(buffer.str());
+        const bool expectSuccess = path.find(".ok.csim") != std::string::npos;
+        check(result.success == expectSuccess,
+              "conformance " + fs::path(path).filename().string() +
+                  (expectSuccess ? " should compile" : " should fail"),
+              __LINE__);
+    }
+#endif
+}
+
 } // namespace
 
 int main() {
     testBasicCircuitCompiles();
     testValuesPreserved();
     testUnknownDirectiveFails();
+    testExtendedComponentsCompile();
     testDuplicateComponentFails();
     testUndefinedComponentFails();
     testInvalidPinNumberFails();
@@ -189,6 +243,7 @@ int main() {
     testInvalidPinTokenFails();
     testHugePinNumberFails();
     testHighBoardPinCompiles();
+    testConformanceFixtures();
 
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;

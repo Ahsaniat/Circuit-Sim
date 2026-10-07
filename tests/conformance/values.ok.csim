@@ -1,0 +1,5 @@
+@resistor R1 10k
+@resistor R2 4.7k
+@capacitor C1 100uF
+@crystal Y1 16MHz
+@board B1 breadboard_830

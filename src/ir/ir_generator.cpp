@@ -93,7 +93,15 @@ ICLayout IRGenerator::getICLayout(const std::string& type) {
             {"decoder_3to8", 16}, {"decoder_2to4", 16}, {"encoder_8to3", 16},
             {"shift_reg_8", 14}, {"shift_reg_8_parallel", 16},
             {"d_flipflop", 14}, {"jk_flipflop", 16}, {"latch_8", 20},
-            {"counter_4bit", 16}, {"counter_decade", 14}
+            {"counter_4bit", 16}, {"counter_decade", 14},
+
+            // Extended components (parity with the web compiler)
+            {"switch_spst", 2}, {"switch_spdt", 3}, {"pushbutton", 4},
+            {"display_7seg", 10},
+            {"buzzer", 2}, {"passive_buzzer", 2},
+            {"motor_dc", 2}, {"servo", 3},
+            {"battery", 2}, {"regulator", 3},
+            {"crystal", 2}
         };
         
         // First try value (e.g., 7408 in "and_gate:7408")

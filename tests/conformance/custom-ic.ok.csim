@@ -1,0 +1,13 @@
+def MyIC (
+    A -> input,
+    B -> input,
+    Y -> output
+)
+
+@comp M1 MyIC
+@board B1 breadboard_830
+
+map (
+    (M1 pin 1 -> M1 pin 3)
+    (M1 pin 2 -> M1 pin 3)
+)

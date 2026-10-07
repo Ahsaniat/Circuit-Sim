@@ -54,6 +54,19 @@ enum class TokenType {
     COUNTER_4BIT,   // @counter_4bit
     COUNTER_DECADE, // @counter_decade
 
+    // Extended component keywords (parity with the web compiler)
+    SWITCH_SPST,    // @switch_spst
+    SWITCH_SPDT,    // @switch_spdt
+    PUSHBUTTON,     // @pushbutton
+    DISPLAY_7SEG,   // @display_7seg
+    BUZZER,         // @buzzer
+    PASSIVE_BUZZER, // @passive_buzzer
+    MOTOR_DC,       // @motor_dc
+    SERVO,          // @servo
+    BATTERY,        // @battery
+    REGULATOR,      // @regulator
+    CRYSTAL,        // @crystal
+
     // Types
     TYPE_INPUT,
     TYPE_OUTPUT,
@@ -143,6 +156,17 @@ inline const char* tokenTypeToString(TokenType type) {
         case TokenType::LATCH_8: return "LATCH_8";
         case TokenType::COUNTER_4BIT: return "COUNTER_4BIT";
         case TokenType::COUNTER_DECADE: return "COUNTER_DECADE";
+        case TokenType::SWITCH_SPST: return "SWITCH_SPST";
+        case TokenType::SWITCH_SPDT: return "SWITCH_SPDT";
+        case TokenType::PUSHBUTTON: return "PUSHBUTTON";
+        case TokenType::DISPLAY_7SEG: return "DISPLAY_7SEG";
+        case TokenType::BUZZER: return "BUZZER";
+        case TokenType::PASSIVE_BUZZER: return "PASSIVE_BUZZER";
+        case TokenType::MOTOR_DC: return "MOTOR_DC";
+        case TokenType::SERVO: return "SERVO";
+        case TokenType::BATTERY: return "BATTERY";
+        case TokenType::REGULATOR: return "REGULATOR";
+        case TokenType::CRYSTAL: return "CRYSTAL";
         case TokenType::TYPE_INPUT: return "TYPE_INPUT";
         case TokenType::TYPE_OUTPUT: return "TYPE_OUTPUT";
         case TokenType::TYPE_GND: return "TYPE_GND";

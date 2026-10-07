@@ -53,6 +53,8 @@ if(BUILD_TESTS)
     enable_testing()
     add_executable(circuitsim_tests tests/cpp/compiler_tests.cpp)
     target_link_libraries(circuitsim_tests PRIVATE circuitsim_core)
+    target_compile_definitions(circuitsim_tests PRIVATE
+        CONFORMANCE_DIR="${CMAKE_SOURCE_DIR}/tests/conformance")
     if(NOT MSVC)
         target_compile_options(circuitsim_tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()

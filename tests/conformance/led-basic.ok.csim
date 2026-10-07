@@ -1,0 +1,10 @@
+@battery BAT1 9V
+@resistor R1 330
+@led LED1 red
+@board B1 breadboard_830
+
+map (
+    (BAT1 pin 1 -> R1 pin 1)
+    (R1 pin 2 -> LED1 pin 1)
+    (BAT1 pin 2 -> LED1 pin 2)
+)
