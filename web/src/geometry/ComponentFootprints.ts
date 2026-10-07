@@ -304,7 +304,9 @@ export function getComponentFootprint(category: ComponentCategory, pinCount: num
         case 'crystal':
             return getCrystalFootprint();
         default:
-            return getICFootprint(pinCount);
+            // The category union is exhaustive; reaching here means a caller
+            // bypassed the type system with invalid data.
+            throw new Error(`Unknown component category: ${String(category)}`);
     }
 }
 

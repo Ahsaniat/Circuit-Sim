@@ -625,6 +625,18 @@ class IRGenerator {
     }
 
     /**
+     * Resolve the pin count for a component. Semantic validation already
+     * rejects unknown types; this guard keeps the invariant explicit.
+     */
+    private resolvePinCount(comp: CompDecl): number {
+        const pinCount = BUILTIN_ICS[comp.type];
+        if (pinCount === undefined) {
+            throw new CompileError(`Unknown component type: '${comp.type}'`, comp.line, comp.column);
+        }
+        return pinCount;
+    }
+
+    /**
      * Layout and generate all components using the unified footprint system
      */
     private layoutAndGenerateComponents(components: CompDecl[], ir: CircuitIR): void {
@@ -632,7 +644,7 @@ class IRGenerator {
             // No board - simple row layout
             let currentX = 10;
             for (const comp of components) {
-                const pinCount = BUILTIN_ICS[comp.type] || 14;
+                const pinCount = this.resolvePinCount(comp);
                 const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
                 
                 ir.components.push({
@@ -656,7 +668,7 @@ class IRGenerator {
         const bottomHalfComps: CompDecl[] = [];  // Components in bottom half (rows F-J)
 
         for (const comp of components) {
-            const pinCount = BUILTIN_ICS[comp.type] || 14;
+            const pinCount = this.resolvePinCount(comp);
             const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
             
             if (footprint.straddlesChannel) {
@@ -698,7 +710,7 @@ class IRGenerator {
     ): void {
         if (!this.boardGeometry) return;
 
-        const pinCount = BUILTIN_ICS[comp.type] || 14;
+        const pinCount = this.resolvePinCount(comp);
         const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
         
         // Determine starting column based on placement type
