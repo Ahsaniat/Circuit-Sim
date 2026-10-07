@@ -1,0 +1,12 @@
+@comp A1 7408
+@comp A2 7408
+@board B1 breadboard_830
+@board B2 breadboard_830
+
+B1.map (
+    (A1 pin 3 -> A2 pin 1)
+)
+
+B2.map (
+    (A1 pin 3 -> A2 pin 2)
+)

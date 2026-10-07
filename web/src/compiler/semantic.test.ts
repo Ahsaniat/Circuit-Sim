@@ -60,10 +60,11 @@ describe('semantic validation', () => {
         }
     });
 
-    it('rejects duplicate map blocks', () => {
-        expect(() =>
-            compile(`@comp A1 7408\nmap (\n (A1 pin 1 -> A1 pin 2)\n)\nmap (\n (A1 pin 3 -> A1 pin 4)\n)\n`)
-        ).toThrowError(/Duplicate 'map' block/);
+    it('allows multiple map blocks and merges their connections', () => {
+        const ir = compile(
+            `@comp A1 7408\nmap (\n (A1 pin 1 -> A1 pin 2)\n)\nmap (\n (A1 pin 3 -> A1 pin 4)\n)\n`
+        );
+        expect(ir.wires).toHaveLength(2);
     });
 
     it('rejects pin numbers with alphanumeric suffixes', () => {

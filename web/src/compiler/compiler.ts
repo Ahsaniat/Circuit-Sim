@@ -41,12 +41,24 @@ interface PinRef {
 interface Connection {
     source: PinRef;
     destinations: PinRef[];
+    /** Board scope from `B1.map (...)`; undefined for a global map block. */
+    boardId?: string;
+    boardLine?: number;
+    boardColumn?: number;
+}
+
+interface PlaceAssignment {
+    refs: Array<{ id: string; line: number; column: number }>;
+    boardId: string;
+    line: number;
+    column: number;
 }
 
 interface ParsedProgram {
     components: CompDecl[];
     boards: BoardDecl[];
     connections: Connection[];
+    placements: PlaceAssignment[];
     customICs: CustomICDef[];
 }
 
@@ -255,10 +267,13 @@ class Lexer {
             case '(': this.addToken('LPAREN', '(', startCol); break;
             case ')': this.addToken('RPAREN', ')', startCol); break;
             case ',': this.addToken('COMMA', ',', startCol); break;
+            case '.': this.addToken('DOT', '.', startCol); break;
             case '-':
                 if (this.peek() === '>') {
                     this.advance();
                     this.addToken('ARROW', '->', startCol);
+                } else {
+                    throw new CompileError("Unexpected character '-'", this.line, startCol);
                 }
                 break;
             case '@':
@@ -269,6 +284,8 @@ class Lexer {
                     this.scanNumber(c, startCol);
                 } else if (this.isAlpha(c) || c === '_') {
                     this.scanIdentifier(c, startCol);
+                } else {
+                    throw new CompileError(`Unexpected character '${c}'`, this.line, startCol);
                 }
         }
     }
@@ -305,6 +322,10 @@ class Lexer {
             this.addToken('PIN', text, startCol);
         } else if (text === 'def') {
             this.addToken('DEF', text, startCol);
+        } else if (text === 'place') {
+            this.addToken('PLACE', text, startCol);
+        } else if (text === 'on') {
+            this.addToken('ON', text, startCol);
         } else if (KEYWORDS.has(text)) {
             this.addToken('KEYWORD', text, startCol);
         } else {
@@ -364,6 +385,7 @@ class Parser {
             components: [],
             boards: [],
             connections: [],
+            placements: [],
             customICs: []
         };
 
@@ -375,17 +397,26 @@ class Parser {
                 program.components.push(this.parseTypedCompDecl());
             } else if (this.match('BOARD')) {
                 program.boards.push(this.parseBoardDecl());
-            } else if (this.match('MAP')) {
-                const mapToken = this.tokens[this.current - 1];
+            } else if (this.check('PLACE')) {
+                program.placements.push(this.parsePlaceStatement());
+            } else if (this.check('IDENTIFIER') && this.checkNext('MAP')) {
+                // Board-scoped map without dot: B1 map ( ... )
+                const boardToken = this.advance();
+                this.advance(); // 'map'
                 const connections = this.parseMapBlock();
-                if (program.connections.length > 0) {
-                    throw new CompileError(
-                        "Duplicate 'map' block; merge the connections into a single block",
-                        mapToken.line,
-                        mapToken.column
-                    );
-                }
-                program.connections = connections;
+                this.applyScope(connections, boardToken);
+                program.connections.push(...connections);
+            } else if (this.check('IDENTIFIER') && this.checkNext('DOT') && this.checkNextN(2, 'MAP')) {
+                // Canonical form: B1.map ( ... )
+                const boardToken = this.advance();
+                this.advance(); // '.'
+                this.advance(); // 'map'
+                const connections = this.parseMapBlock();
+                this.applyScope(connections, boardToken);
+                program.connections.push(...connections);
+            } else if (this.match('MAP')) {
+                // Global map block; unplaced components default to the first board.
+                program.connections.push(...this.parseMapBlock());
             } else if (this.match('DEF')) {
                 program.customICs.push(this.parseICDef());
             } else {
@@ -397,6 +428,39 @@ class Parser {
         }
 
         return program;
+    }
+
+    private checkNext(type: string): boolean {
+        return this.tokens[this.current + 1]?.type === type;
+    }
+
+    private checkNextN(offset: number, type: string): boolean {
+        return this.tokens[this.current + offset]?.type === type;
+    }
+
+    private applyScope(connections: Connection[], boardToken: Token): void {
+        for (const connection of connections) {
+            connection.boardId = boardToken.lexeme;
+            connection.boardLine = boardToken.line;
+            connection.boardColumn = boardToken.column;
+        }
+    }
+
+    private parsePlaceStatement(): PlaceAssignment {
+        const placeToken = this.advance(); // 'place'
+        const refs: Array<{ id: string; line: number; column: number }> = [];
+        do {
+            const idToken = this.consume('IDENTIFIER', 'Expected component identifier after place');
+            refs.push({ id: idToken.lexeme, line: idToken.line, column: idToken.column });
+        } while (this.match('COMMA'));
+        this.consume('ON', "Expected 'on' in place statement");
+        const boardToken = this.consume('IDENTIFIER', "Expected board identifier after 'on'");
+        return {
+            refs,
+            boardId: boardToken.lexeme,
+            line: placeToken.line,
+            column: placeToken.column
+        };
     }
 
     private parseCompDecl(): CompDecl {
@@ -565,19 +629,18 @@ class IRGenerator {
     // Component placements - stores footprint and placement info for each component
     private componentPlacements: Map<string, { footprint: ComponentFootprint; placement: PlacementResult }> = new Map();
     
-    // Board geometry instance used for component placement (first board)
-    private boardGeometry: BreadboardGeometry | null = null;
+    // Board geometries and per-board placement state
+    private boardGeometries: Map<string, BreadboardGeometry> = new Map();
+    private componentBoards: Map<string, string> = new Map();
+    private nextAvailableCols: Map<string, { top: number; bottom: number; straddling: number }> = new Map();
     
-    // Board that owns auto-placed components and wires
+    // Board that owns unassigned components (first declared board)
     private defaultBoardId: string | null = null;
 
     // Pin counts for `def` custom ICs
     private customPinCounts: Map<string, number> = new Map();
-    
-    // Track next available column for each row group
-    private nextAvailableCol: { top: number; bottom: number; straddling: number } = { top: 3, bottom: 3, straddling: 3 };
 
-    generate(program: ParsedProgram): CircuitIR {
+    generate(program: ParsedProgram, componentBoards: Map<string, string>): CircuitIR {
         const ir: CircuitIR = {
             width: 0,
             height: 0,
@@ -590,10 +653,11 @@ class IRGenerator {
         this.occupiedHoles.clear();
         this.componentPlacements.clear();
         this.symbols.clear();
-        this.boardGeometry = null;
+        this.boardGeometries.clear();
+        this.componentBoards = new Map(componentBoards);
+        this.nextAvailableCols.clear();
         this.defaultBoardId = null;
         this.customPinCounts = new Map(program.customICs.map(ic => [ic.name, ic.pins.length]));
-        this.nextAvailableCol = { top: 3, bottom: 3, straddling: 3 };
 
         ir.customICs = program.customICs.map(ic => ({ name: ic.name, pins: ic.pins.map(p => ({ ...p })) }));
 
@@ -605,7 +669,13 @@ class IRGenerator {
         }
 
         for (let i = 0; i < program.boards.length; i++) {
-            ir.boards.push(this.generateBoard(program.boards[i], i));
+            const boardIr = this.generateBoard(program.boards[i], i);
+            ir.boards.push(boardIr);
+            this.boardGeometries.set(
+                boardIr.id,
+                new BreadboardGeometry(boardIr.position.x, boardIr.position.y)
+            );
+            this.nextAvailableCols.set(boardIr.id, { top: 3, bottom: 3, straddling: 3 });
         }
         this.defaultBoardId = program.boards[0]?.id ?? null;
 
@@ -630,11 +700,7 @@ class IRGenerator {
     }
 
     private generateBoard(board: BoardDecl, index: number): BoardIR {
-        // Only the first board is used for auto-placement; additional boards
-        // are laid out side by side so they do not overlap.
-        if (!this.boardGeometry) {
-            this.boardGeometry = new BreadboardGeometry(0, 0);
-        }
+        // Boards are laid out side by side so they do not overlap.
         const x = index * (BreadboardGeometry.BOARD_WIDTH + 20);
         
         return {
@@ -663,10 +729,10 @@ class IRGenerator {
     }
 
     /**
-     * Layout and generate all components using the unified footprint system
+     * Layout and generate all components, grouped by their assigned board.
      */
     private layoutAndGenerateComponents(components: CompDecl[], ir: CircuitIR): void {
-        if (!this.boardGeometry) {
+        if (this.boardGeometries.size === 0) {
             // No board - simple row layout
             let currentX = 10;
             for (const comp of components) {
@@ -688,71 +754,80 @@ class IRGenerator {
             return;
         }
 
-        // Group components by placement type
-        const straddlingComps: CompDecl[] = [];  // ICs that straddle the channel
-        const topHalfComps: CompDecl[] = [];     // Components in top half (rows A-E)
-        const bottomHalfComps: CompDecl[] = [];  // Components in bottom half (rows F-J)
-
+        // Group components by their assigned board, keeping board order.
+        const byBoard = new Map<string, CompDecl[]>();
         for (const comp of components) {
-            const pinCount = this.resolvePinCount(comp);
-            const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
-            
-            if (footprint.straddlesChannel) {
-                straddlingComps.push(comp);
-            } else {
-                // Alternate between top and bottom half for non-IC components
-                if (topHalfComps.length <= bottomHalfComps.length) {
+            const boardId = this.componentBoards.get(comp.id) ?? this.defaultBoardId;
+            if (!boardId || !this.boardGeometries.has(boardId)) {
+                throw new CompileError(`Component '${comp.id}' has no board to be placed on`, comp.line, comp.column);
+            }
+            const list = byBoard.get(boardId) ?? [];
+            list.push(comp);
+            byBoard.set(boardId, list);
+        }
+
+        for (const [boardId, boardComponents] of byBoard) {
+            const straddlingComps: CompDecl[] = [];
+            const topHalfComps: CompDecl[] = [];
+            const bottomHalfComps: CompDecl[] = [];
+
+            for (const comp of boardComponents) {
+                const pinCount = this.resolvePinCount(comp);
+                const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
+                if (footprint.straddlesChannel) {
+                    straddlingComps.push(comp);
+                } else if (topHalfComps.length <= bottomHalfComps.length) {
                     topHalfComps.push(comp);
                 } else {
                     bottomHalfComps.push(comp);
                 }
             }
-        }
 
-        // Place straddling components (ICs) first
-        for (const comp of straddlingComps) {
-            this.placeComponent(comp, ir, 'straddling');
-        }
-
-        // Place top-half components
-        for (const comp of topHalfComps) {
-            this.placeComponent(comp, ir, 'top', 'C');  // Row C is a good default for top half
-        }
-
-        // Place bottom-half components
-        for (const comp of bottomHalfComps) {
-            this.placeComponent(comp, ir, 'bottom', 'H');  // Row H is a good default for bottom half
+            for (const comp of straddlingComps) {
+                this.placeComponent(comp, ir, 'straddling', undefined, boardId);
+            }
+            for (const comp of topHalfComps) {
+                this.placeComponent(comp, ir, 'top', 'C', boardId);
+            }
+            for (const comp of bottomHalfComps) {
+                this.placeComponent(comp, ir, 'bottom', 'H', boardId);
+            }
         }
     }
 
     /**
-     * Place a single component on the breadboard
+     * Place a single component on its assigned board.
      */
     private placeComponent(
         comp: CompDecl, 
         ir: CircuitIR, 
         placement: 'top' | 'bottom' | 'straddling',
-        preferredRow?: string
+        preferredRow: string | undefined,
+        boardId: string
     ): void {
-        if (!this.boardGeometry) return;
+        const geo = this.boardGeometries.get(boardId);
+        if (!geo) return;
+
+        const counters = this.nextAvailableCols.get(boardId) ?? { top: 3, bottom: 3, straddling: 3 };
+        this.nextAvailableCols.set(boardId, counters);
 
         const pinCount = this.resolvePinCount(comp);
         const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
         
         // Determine starting column based on placement type
-        const startCol = this.nextAvailableCol[placement];
+        const startCol = counters[placement];
         
         // Calculate placement
         const placementResult = calculatePlacement(
             footprint, 
-            this.boardGeometry, 
+            geo, 
             startCol, 
             preferredRow
         );
 
-        // Mark occupied holes
+        // Mark occupied holes (scoped to this board)
         for (const [, pinPos] of placementResult.pinPositions) {
-            this.occupiedHoles.set(`${pinPos.col},${pinPos.row}`, comp.id);
+            this.occupiedHoles.set(`${boardId}:${pinPos.col},${pinPos.row}`, comp.id);
         }
 
         // Store placement info
@@ -760,7 +835,7 @@ class IRGenerator {
 
         // Update next available column
         const maxCol = Math.max(...placementResult.occupiedColumns);
-        this.nextAvailableCol[placement] = maxCol + 2;  // Leave 1 column gap
+        counters[placement] = maxCol + 2;  // Leave 1 column gap
 
         // Create component IR
         ir.components.push({
@@ -771,27 +846,29 @@ class IRGenerator {
             size: { width: footprint.bodyWidth, height: footprint.bodyHeight },
             category: comp.category,
             value: comp.value,
-            boardId: this.defaultBoardId ?? undefined
+            boardId
         });
     }
 
-    private getBoardHolePosition(col: number, row: string): Position {
-        if (!this.boardGeometry) return { x: 0, y: 0 };
-        const hole = this.boardGeometry.getHolePosition(col, row);
+    private getBoardHolePosition(boardId: string, col: number, row: string): Position {
+        const geo = this.boardGeometries.get(boardId);
+        if (!geo) return { x: 0, y: 0 };
+        const hole = geo.getHolePosition(col, row);
         return { x: hole.x, y: hole.y };
     }
 
     // Find the next free hole in the same column (shorted together on breadboard)
-    private findFreeHoleInColumn(col: number, preferredRow: string, wireId: string): string {
+    private findFreeHoleInColumn(boardId: string, col: number, preferredRow: string, wireId: string): string {
         // Rows in order of preference for top half (A-E) and bottom half (F-J)
         const topRows = ['D', 'C', 'B', 'A']; // E is occupied by IC pin
         const bottomRows = ['G', 'H', 'I', 'J']; // F is occupied by IC pin
         
-        const isTopHalf = this.boardGeometry?.isTopHalf(preferredRow) ?? (preferredRow <= 'E');
+        const geo = this.boardGeometries.get(boardId);
+        const isTopHalf = geo?.isTopHalf(preferredRow) ?? (preferredRow <= 'E');
         const rows = isTopHalf ? topRows : bottomRows;
         
         for (const row of rows) {
-            const key = `${col},${row}`;
+            const key = `${boardId}:${col},${row}`;
             if (!this.occupiedHoles.has(key)) {
                 this.occupiedHoles.set(key, wireId);
                 return row;
@@ -803,19 +880,24 @@ class IRGenerator {
     }
 
     /**
-     * Get wire terminal position - uses the unified placement system
-     * Finds a free hole in the same column as the component pin
+     * Get wire terminal position - uses the unified placement system.
+     * Finds a free hole in the same column as the component pin, on the
+     * board that owns the component.
      */
     private getWireTerminalPosition(componentId: string, pinNumber: number, wireId: string): Position {
         const symbol = this.symbols.get(componentId);
         if (!symbol) return { x: 0, y: 0 };
 
         if (symbol.kind === 'board') {
+            const boardId = componentId;
             const col = ((pinNumber - 1) % BreadboardGeometry.NUM_COLS) + 1;
             const preferredRow = pinNumber <= BreadboardGeometry.NUM_COLS ? 'D' : 'G';
-            const row = this.findFreeHoleInColumn(col, preferredRow, wireId);
-            return this.getBoardHolePosition(col, row);
+            const row = this.findFreeHoleInColumn(boardId, col, preferredRow, wireId);
+            return this.getBoardHolePosition(boardId, col, row);
         }
+
+        const boardId = this.componentBoards.get(componentId) ?? this.defaultBoardId;
+        if (!boardId) return { x: 0, y: 0 };
 
         // Look up the component's placement info
         const placementInfo = this.componentPlacements.get(componentId);
@@ -826,9 +908,8 @@ class IRGenerator {
         // Find the pin position from placement
         const pinPos = placement.pinPositions.get(pinNumber);
         if (!pinPos) {
-            // Pin not found - try to calculate it for ICs
-            console.warn(`Pin ${pinNumber} not found for component ${componentId}`);
-            return { x: 0, y: 0 };
+            // Unreachable after semantic validation, but never fail silently.
+            throw new CompileError(`Pin ${pinNumber} not found for component '${componentId}'`, 1, 1);
         }
         
         // Determine which row to find a free hole in
@@ -847,8 +928,15 @@ class IRGenerator {
         }
         
         // Find a free hole in the same column
-        const freeRow = this.findFreeHoleInColumn(pinPos.col, preferredFreeRow, wireId);
-        return this.getBoardHolePosition(pinPos.col, freeRow);
+        const freeRow = this.findFreeHoleInColumn(boardId, pinPos.col, preferredFreeRow, wireId);
+        return this.getBoardHolePosition(boardId, pinPos.col, freeRow);
+    }
+
+    /** Board that owns a symbol (components via assignment, boards via identity). */
+    private boardIdOfSymbol(id: string): string | undefined {
+        const symbol = this.symbols.get(id);
+        if (symbol?.kind === 'board') return id;
+        return this.componentBoards.get(id) ?? this.defaultBoardId ?? undefined;
     }
 
     private generateWires(connections: Connection[]): Wire[] {
@@ -887,7 +975,7 @@ class IRGenerator {
                     },
                     color,
                     waypoints,
-                    boardId: this.defaultBoardId ?? undefined
+                    boardId: this.boardIdOfSymbol(conn.source.componentId)
                 });
             }
         }
@@ -971,10 +1059,10 @@ export function compile(source: string): CircuitIR {
     const parser = new Parser(tokens);
     const program = parser.parse();
 
-    validateProgram(program);
+    const assignments = validateProgram(program);
 
     const generator = new IRGenerator();
-    return generator.generate(program);
+    return generator.generate(program, assignments);
 }
 
 // Connection-point counts per board type, used for pin-range validation.
@@ -993,8 +1081,13 @@ interface SymbolInfo {
  * Semantic validation. Runs after parsing and before IR generation so that
  * undefined references, duplicate declarations and out-of-range pins are
  * reported instead of silently producing phantom geometry.
+ *
+ * Returns the component-to-board assignment:
+ *  - `place` statements are authoritative,
+ *  - board-scoped map blocks assign the components they first reference,
+ *  - everything else belongs to the first board.
  */
-function validateProgram(program: ParsedProgram): void {
+function validateProgram(program: ParsedProgram): Map<string, string> {
     const symbols = new Map<string, SymbolInfo>();
     const customICs = new Map<string, number>();
 
@@ -1027,6 +1120,36 @@ function validateProgram(program: ParsedProgram): void {
             throw new CompileError(`Duplicate board declaration: '${board.id}'`, board.line, board.column);
         }
         symbols.set(board.id, { kind: 'board', pinCount: BOARD_PIN_COUNTS[board.type] ?? 830 });
+    }
+
+    // Board-scoped map blocks must name a declared board.
+    for (const conn of program.connections) {
+        if (conn.boardId === undefined) continue;
+        const symbol = symbols.get(conn.boardId);
+        if (!symbol || symbol.kind !== 'board') {
+            throw new CompileError(
+                `Unknown board: '${conn.boardId}'`,
+                conn.boardLine ?? 1,
+                conn.boardColumn ?? 1
+            );
+        }
+    }
+
+    // place statements must name declared boards and components.
+    for (const place of program.placements) {
+        const boardSymbol = symbols.get(place.boardId);
+        if (!boardSymbol || boardSymbol.kind !== 'board') {
+            throw new CompileError(`Unknown board: '${place.boardId}'`, place.line, place.column);
+        }
+        for (const ref of place.refs) {
+            const symbol = symbols.get(ref.id);
+            if (!symbol) {
+                throw new CompileError(`Undefined component: '${ref.id}'`, ref.line, ref.column);
+            }
+            if (symbol.kind !== 'component') {
+                throw new CompileError(`'${ref.id}' is a board, not a component`, ref.line, ref.column);
+            }
+        }
     }
 
     const usedBoardPins = new Map<string, Set<number>>();
@@ -1066,4 +1189,54 @@ function validateProgram(program: ParsedProgram): void {
             validatePinRef(dest);
         }
     }
+
+    // Component-to-board assignment. Explicit `place` statements win; a
+    // board-scoped map assigns the components it first references; a
+    // component claimed by two scoped maps without an explicit place is an
+    // error because the intent is ambiguous.
+    const assignments = new Map<string, string>();
+    const origin = new Map<string, 'place' | 'map'>();
+
+    for (const place of program.placements) {
+        for (const ref of place.refs) {
+            const existing = assignments.get(ref.id);
+            if (existing !== undefined && existing !== place.boardId) {
+                throw new CompileError(
+                    `Component '${ref.id}' is already placed on '${existing}'`,
+                    ref.line,
+                    ref.column
+                );
+            }
+            assignments.set(ref.id, place.boardId);
+            origin.set(ref.id, 'place');
+        }
+    }
+
+    for (const conn of program.connections) {
+        if (!conn.boardId) continue;
+        for (const ref of [conn.source, ...conn.destinations]) {
+            const existing = assignments.get(ref.componentId);
+            if (existing === undefined) {
+                assignments.set(ref.componentId, conn.boardId);
+                origin.set(ref.componentId, 'map');
+            } else if (existing !== conn.boardId && origin.get(ref.componentId) === 'map') {
+                throw new CompileError(
+                    `Component '${ref.componentId}' is referenced by both '${existing}.map' and '${conn.boardId}.map'; use 'place' to choose a board`,
+                    ref.line,
+                    ref.column
+                );
+            }
+        }
+    }
+
+    const firstBoard = program.boards[0]?.id;
+    if (firstBoard) {
+        for (const comp of program.components) {
+            if (!assignments.has(comp.id)) {
+                assignments.set(comp.id, firstBoard);
+            }
+        }
+    }
+
+    return assignments;
 }
