@@ -27,6 +27,9 @@ public:
     std::string formatErrors() const;
 
 private:
+    // Upper bound so a recovery bug can never grow the error list without
+    // limit; the compile has already failed at this point either way.
+    static constexpr size_t MAX_ERRORS = 200;
     std::vector<Error> errors_;
 };
 

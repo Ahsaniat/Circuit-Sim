@@ -37,6 +37,7 @@ private:
     
     void skipNewlines();
     void synchronize();
+    void skipToConnectionEnd();
     
     // Parsing methods
     std::unique_ptr<CompDeclNode> parseCompDecl();

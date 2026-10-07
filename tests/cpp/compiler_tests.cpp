@@ -126,6 +126,42 @@ void testCustomICDefinition() {
     CHECK(result.success);
 }
 
+void testDuplicateMapFails() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@comp A1 7408\n"
+        "map (\n"
+        "  (A1 pin 1 -> A1 pin 2)\n"
+        ")\n"
+        "map (\n"
+        "  (A1 pin 3 -> A1 pin 4)\n"
+        ")\n");
+    CHECK(!result.success);
+    CHECK_CONTAINS(result.errors, "Duplicate 'map' block");
+}
+
+void testInvalidPinTokenFails() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@comp A1 7408\n"
+        "map (\n"
+        "  (A1 pin 2N2222 -> A1 pin 1)\n"
+        ")\n");
+    CHECK(!result.success);
+    CHECK_CONTAINS(result.errors, "Invalid pin number");
+}
+
+void testHugePinNumberFails() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@comp A1 7408\n"
+        "map (\n"
+        "  (A1 pin 99999999999999999999 -> A1 pin 1)\n"
+        ")\n");
+    CHECK(!result.success);
+    CHECK_CONTAINS(result.errors, "Invalid pin number");
+}
+
 } // namespace
 
 int main() {
@@ -137,6 +173,9 @@ int main() {
     testInvalidPinNumberFails();
     testBoardPinConflictFails();
     testCustomICDefinition();
+    testDuplicateMapFails();
+    testInvalidPinTokenFails();
+    testHugePinNumberFails();
 
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;

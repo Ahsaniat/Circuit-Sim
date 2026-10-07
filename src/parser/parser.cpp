@@ -1,5 +1,7 @@
 #include "parser.h"
 
+#include <exception>
+
 namespace circuitsim {
 
 Parser::Parser(const std::vector<Token>& tokens, ErrorReporter& errorReporter)
@@ -198,12 +200,21 @@ std::unique_ptr<ProgramNode> Parser::parse() {
                 auto icDef = parseICDef();
                 if (icDef) program->icDefinitions.push_back(std::move(icDef));
             } else if (match(TokenType::MAP)) {
-                program->mapBlock = parseMapBlock();
+                SourceLocation mapLocation = previous().location;
+                auto mapBlock = parseMapBlock();
+                if (program->mapBlock) {
+                    errorReporter_.report("parser",
+                        "Duplicate 'map' block; merge the connections into a single block",
+                        mapLocation);
+                } else {
+                    program->mapBlock = std::move(mapBlock);
+                }
             } else {
                 reportError("Expected component declaration, '@board', 'def', or 'map'");
                 synchronize();
             }
-        } catch (...) {
+        } catch (const std::exception& e) {
+            reportError(std::string("Parser error: ") + e.what());
             synchronize();
         }
         
@@ -336,9 +347,16 @@ std::unique_ptr<MapBlockNode> Parser::parseMapBlock() {
     auto mapBlock = std::make_unique<MapBlockNode>(loc);
     
     while (!check(TokenType::RPAREN) && !isAtEnd()) {
+        size_t positionBefore = current_;
         auto connection = parseConnection();
         if (connection) {
             mapBlock->connections.push_back(std::move(connection));
+        }
+        // Guarantee forward progress: a failed parse must never leave the
+        // cursor in place or this loop would spin and grow the error list
+        // without bound.
+        if (current_ == positionBefore) {
+            advance();
         }
         skipNewlines();
     }
@@ -352,25 +370,53 @@ std::unique_ptr<MapBlockNode> Parser::parseMapBlock() {
 std::unique_ptr<ConnectionNode> Parser::parseConnection() {
     SourceLocation loc = peek().location;
     
-    consume(TokenType::LPAREN, "Expected '(' to start connection");
+    if (!check(TokenType::LPAREN)) {
+        reportError("Expected '(' to start connection");
+        return nullptr;
+    }
+    advance();
     
     auto connection = std::make_unique<ConnectionNode>(loc);
     
     connection->source = parsePinRef();
-    if (!connection->source) return nullptr;
+    if (!connection->source) {
+        skipToConnectionEnd();
+        return nullptr;
+    }
     
-    consume(TokenType::ARROW, "Expected '->' after source pin");
+    if (!check(TokenType::ARROW)) {
+        reportError("Expected '->' after source pin");
+        skipToConnectionEnd();
+        return nullptr;
+    }
+    advance();
     
     do {
         auto dest = parsePinRef();
-        if (dest) {
-            connection->destinations.push_back(std::move(dest));
+        if (!dest) {
+            skipToConnectionEnd();
+            return nullptr;
         }
+        connection->destinations.push_back(std::move(dest));
     } while (match(TokenType::COMMA));
     
-    consume(TokenType::RPAREN, "Expected ')' to close connection");
+    if (!check(TokenType::RPAREN)) {
+        reportError("Expected ')' to close connection");
+        skipToConnectionEnd();
+        return nullptr;
+    }
+    advance();
     
     return connection;
+}
+
+// Consume the rest of a malformed connection so parsing can resume at the
+// next connection without looping on the same token.
+void Parser::skipToConnectionEnd() {
+    while (!isAtEnd() && !check(TokenType::RPAREN) && !check(TokenType::LPAREN)) {
+        advance();
+    }
+    match(TokenType::RPAREN);
 }
 
 // A1 pin 3
@@ -385,7 +431,25 @@ std::unique_ptr<PinRefNode> Parser::parsePinRef() {
     Token pinNum = consume(TokenType::NUMBER, "Expected pin number");
     if (pinNum.type == TokenType::UNKNOWN) return nullptr;
     
-    int pin = std::stoi(pinNum.lexeme);
+    // NUMBER tokens may carry alphanumeric suffixes (10k, 2N2222); a pin
+    // number must be plain digits, so validate instead of relying on stoi.
+    int pin = 0;
+    bool valid = !pinNum.lexeme.empty();
+    for (char ch : pinNum.lexeme) {
+        if (ch < '0' || ch > '9') {
+            valid = false;
+            break;
+        }
+        pin = pin * 10 + (ch - '0');
+        if (pin > 1000000) {
+            valid = false;
+            break;
+        }
+    }
+    if (!valid) {
+        reportError("Invalid pin number '" + pinNum.lexeme + "'");
+        return nullptr;
+    }
     
     return std::make_unique<PinRefNode>(compId.lexeme, pin, loc);
 }

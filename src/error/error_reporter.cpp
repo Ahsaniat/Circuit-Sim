@@ -4,6 +4,7 @@
 namespace circuitsim {
 
 void ErrorReporter::report(const std::string& phase, const std::string& message, SourceLocation loc) {
+    if (errors_.size() >= MAX_ERRORS) return;
     errors_.emplace_back(message, loc, phase);
 }
 
