@@ -133,6 +133,16 @@ describe('simulation: power sources', () => {
         expect(result.netValues[netlist.pinNet.get('BAT1:2')!]).toBe(0);
     });
 
+    it('lights an LED through a series resistor from a battery', () => {
+        const { ir, geometries } = buildIr(
+            `@battery BAT1 9V\n@resistor R1 330\n@led LED1 red\n@board B1 breadboard_830\n` +
+            `map (\n (BAT1 pin 1 -> R1 pin 1)\n (R1 pin 2 -> LED1 pin 1)\n (BAT1 pin 2 -> LED1 pin 2)\n)\n`
+        );
+        const netlist = extractNetlist(ir, geometries);
+        const result = simulate(ir, netlist);
+        expect(result.litLeds.has('LED1')).toBe(true);
+    });
+
     it('flags nets driven both high and low as a conflict', () => {
         const { ir, geometries } = buildIr(
             `@resistor R1 330\n@board B1 breadboard_830\nmap (\n (B1 pin 1 -> R1 pin 1)\n)\n`

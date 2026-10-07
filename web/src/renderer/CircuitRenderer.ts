@@ -4,6 +4,15 @@ import { getComponentFootprint } from '../geometry/ComponentFootprints';
 import { SnapManager } from '../geometry/SnapManager';
 import { CircuitHistory } from '../history/CircuitHistory';
 import { buildSvg } from '../export/SvgExporter';
+import { Netlist } from '../simulation/Netlist';
+import { SimulationResult, LogicValue } from '../simulation/Simulator';
+
+// Wire colors used while a simulation is active.
+const SIM_VALUE_COLORS: Record<string, string> = {
+    '1': '#2ecc71',
+    '0': '#5b7fb4',
+    'X': '#e67e22',
+};
 
 const BASE_SCALE = 4;  // Pixels per base unit
 const PADDING = 20;
@@ -112,6 +121,10 @@ export class CircuitRenderer {
     // Theme palette (re-read whenever data-theme changes)
     private palette: RenderPalette = DEFAULT_PALETTE;
     private paletteTheme = '';
+
+    // Active simulation overlay (null when simulation is off)
+    private simResult: SimulationResult | null = null;
+    private simNetlist: Netlist | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -865,6 +878,17 @@ export class CircuitRenderer {
 
     getIR(): CircuitIR | null {
         return this.circuitIR;
+    }
+
+    /** Enable/disable the simulation overlay. */
+    setSimulation(result: SimulationResult | null, netlist: Netlist | null): void {
+        this.simResult = result;
+        this.simNetlist = netlist;
+        this.redraw();
+    }
+
+    isSimulating(): boolean {
+        return this.simResult !== null;
     }
 
     setOnHistoryChange(fn: () => void): void {
@@ -1772,6 +1796,24 @@ export class CircuitRenderer {
         this.ctx.beginPath();
         this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
         this.ctx.fill();
+
+        // Simulation: glow when lit, dim when dark
+        const lit = this.simResult?.litLeds.has(comp.id) ?? false;
+        if (lit) {
+            this.ctx.save();
+            this.ctx.shadowColor = ledColor;
+            this.ctx.shadowBlur = 24;
+            this.ctx.fillStyle = ledColor;
+            this.ctx.beginPath();
+            this.ctx.arc(centerX, centerY, radius * 0.95, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+        } else if (this.simResult) {
+            this.ctx.fillStyle = 'rgba(10, 10, 10, 0.45)';
+            this.ctx.beginPath();
+            this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
         
         // Outline
         this.ctx.strokeStyle = this.palette.componentLabel;
@@ -2223,6 +2265,20 @@ export class CircuitRenderer {
         this.ctx.beginPath();
         this.ctx.arc(centerX, centerY, radius * 0.6, 0, Math.PI * 2);
         this.ctx.fill();
+
+        // Simulation: sound arcs while the buzzer is driven
+        if (this.simResult?.activeBuzzers.has(comp.id)) {
+            this.ctx.strokeStyle = '#2ecc71';
+            this.ctx.lineWidth = 1.5 / this.zoom;
+            for (let r = 1; r <= 3; r++) {
+                this.ctx.beginPath();
+                this.ctx.arc(centerX, centerY, radius + r * 4, -Math.PI / 3, Math.PI / 3);
+                this.ctx.stroke();
+                this.ctx.beginPath();
+                this.ctx.arc(centerX, centerY, radius + r * 4, (Math.PI * 2) / 3, (Math.PI * 4) / 3);
+                this.ctx.stroke();
+            }
+        }
         
         if (comp.type !== 'PASSIVE_BUZZER') {
             this.ctx.fillStyle = '#c44';
@@ -2555,7 +2611,16 @@ export class CircuitRenderer {
         }
 
         // Main wire - increased thickness
-        this.ctx.strokeStyle = wire.color;
+        // Simulation overlay: colour wires by net value when active
+        let strokeColor = wire.color;
+        if (this.simResult && this.simNetlist && wireIndex !== undefined) {
+            const netId = this.simNetlist.wireNet[wireIndex];
+            const value: LogicValue | undefined = netId !== undefined ? this.simResult.netValues[netId] : undefined;
+            if (value === 1 || value === 0 || value === 'X') {
+                strokeColor = SIM_VALUE_COLORS[String(value)] ?? wire.color;
+            }
+        }
+        this.ctx.strokeStyle = strokeColor;
         this.ctx.lineWidth = 3.5 / this.zoom;  // Increased from 2 to 3.5
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
@@ -2573,7 +2638,7 @@ export class CircuitRenderer {
         this.ctx.stroke();
 
         // Connection dots - made larger
-        this.ctx.fillStyle = wire.color;
+        this.ctx.fillStyle = strokeColor;
         this.ctx.beginPath();
         this.ctx.arc(fromX, fromY, 4, 0, Math.PI * 2);  // Increased from 3 to 4
         this.ctx.fill();

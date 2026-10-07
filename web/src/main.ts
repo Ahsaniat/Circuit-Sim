@@ -18,6 +18,9 @@ import {
     applyLayout,
     layoutToLine,
 } from './layout/LayoutSerializer';
+import { BreadboardGeometry } from './geometry/BreadboardGeometry';
+import { extractNetlist, Netlist } from './simulation/Netlist';
+import { simulate } from './simulation/Simulator';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
 @AND A1 7408
@@ -54,6 +57,8 @@ class App {
     private shortcuts: KeyboardShortcuts;
     private pendingLayout: CircuitLayout | null = null;
     private autosaveTimer: number | null = null;
+    private simActive = false;
+    private netlist: Netlist | null = null;
 
     constructor() {
         const canvas = document.getElementById('circuit-canvas') as HTMLCanvasElement;
@@ -147,6 +152,9 @@ class App {
         this.renderer.setOnHistoryChange(() => {
             this.syncHistoryButtons();
             this.scheduleAutosave();
+            if (this.simActive) {
+                this.runSimulation();
+            }
         });
 
         // Wire up toolbar buttons
@@ -165,6 +173,7 @@ class App {
     private setupToolbar(): void {
         document.getElementById('compile-btn')?.addEventListener('click', () => this.compile());
         document.getElementById('compile-btn-2')?.addEventListener('click', () => this.compile());
+        document.getElementById('sim-btn')?.addEventListener('click', () => this.toggleSimulation());
         document.getElementById('clear-btn')?.addEventListener('click', () => this.clear());
         document.getElementById('save-btn')?.addEventListener('click', () => this.save());
         document.getElementById('load-btn')?.addEventListener('click', () => this.fileManager.openFile());
@@ -247,6 +256,9 @@ class App {
             this.syncZoom();
             this.syncHistoryButtons();
             this.scheduleAutosave();
+            if (this.simActive) {
+                this.runSimulation();
+            }
         } catch (err) {
             if (err instanceof CompileError) {
                 this.codeEditor.setError(err.line, err.column, err.message);
@@ -264,12 +276,65 @@ class App {
         this.pendingLayout = null;
         this.codeEditor.value = '';
         this.renderer.render(EMPTY_IR);
+        this.renderer.setSimulation(null, null);
+        this.simActive = false;
+        this.netlist = null;
+        this.syncSimButton();
         this.hideError();
         this.statusBar.setStatus('Ready', 'ready');
         this.statusBar.setStats(0, 0);
         this.syncHistoryButtons();
         this.scheduleAutosave();
         this.toast.info('Editor cleared');
+    }
+
+    private toggleSimulation(): void {
+        this.simActive = !this.simActive;
+        if (this.simActive) {
+            this.runSimulation();
+        } else {
+            this.netlist = null;
+            this.renderer.setSimulation(null, null);
+            this.syncSimButton();
+            this.statusBar.setStatus('Simulation off', 'ready');
+        }
+    }
+
+    private runSimulation(): void {
+        const ir = this.renderer.getIR();
+        if (!ir || ir.components.length === 0) {
+            this.toast.warning('Nothing to simulate');
+            this.simActive = false;
+            this.syncSimButton();
+            return;
+        }
+
+        const geometries = new Map<string, BreadboardGeometry>();
+        for (const board of ir.boards) {
+            geometries.set(board.id, new BreadboardGeometry(board.position.x, board.position.y));
+        }
+        this.netlist = extractNetlist(ir, geometries);
+        const result = simulate(ir, this.netlist);
+        this.renderer.setSimulation(result, this.netlist);
+        this.syncSimButton();
+
+        const lit = result.litLeds.size;
+        if (result.unstable) {
+            this.statusBar.setStatus('Simulation unstable (oscillating)', 'error');
+            this.toast.warning('Circuit oscillates; values shown as unknown');
+        } else {
+            this.statusBar.setStatus(`Simulation: ${lit} LED${lit === 1 ? '' : 's'} lit`, 'success');
+        }
+        if (result.unsupported.size > 0) {
+            this.toast.warning(`${result.unsupported.size} IC(s) have no simulation model yet`);
+        }
+    }
+
+    private syncSimButton(): void {
+        const btn = document.getElementById('sim-btn');
+        if (!btn) return;
+        btn.classList.toggle('active', this.simActive);
+        btn.setAttribute('aria-pressed', String(this.simActive));
     }
 
     private save(): void {

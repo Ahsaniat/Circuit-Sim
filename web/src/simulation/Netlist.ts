@@ -179,6 +179,14 @@ export function extractNetlist(
         }
     }
 
+    // Series passives (resistors, inductors) conduct logic levels, so their
+    // pins share a net in the digital abstraction.
+    for (const comp of ir.components) {
+        if (comp.type === 'RES' || comp.type === 'IND') {
+            uf.union(`pin:${pinKey(comp.id, 1)}`, `pin:${pinKey(comp.id, 2)}`);
+        }
+    }
+
     // Group nodes into nets.
     const rootToNet = new Map<string, number>();
     const nets: Net[] = [];
