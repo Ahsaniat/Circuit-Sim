@@ -34,6 +34,14 @@ describe('ERC: short circuits', () => {
         );
         expect(issues.some(i => i.severity === 'error' && /Short circuit/.test(i.message))).toBe(true);
     });
+
+    it('reports two outputs driving the same net', () => {
+        const { issues } = analyze(
+            `@AND A1 7408\n@AND A2 7408\n@resistor R1 330\n@board B1 breadboard_830\n` +
+            `map (\n (A1 pin 3 -> R1 pin 1)\n (A2 pin 3 -> R1 pin 1)\n)\n`
+        );
+        expect(issues.some(i => i.severity === 'error' && /Output conflict/.test(i.message))).toBe(true);
+    });
 });
 
 describe('ERC: power', () => {

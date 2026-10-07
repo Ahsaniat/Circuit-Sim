@@ -1,0 +1,197 @@
+/**
+ * Pin function database for common ICs. Used by tooltips, ERC and future
+ * netlist tooling. Only entries that are confidently known are included;
+ * unknown pins simply have no function reported.
+ */
+
+export type PinDirection = 'input' | 'output' | 'power' | 'ground' | 'passive' | 'nc';
+
+export interface PinInfo {
+    fn: string;
+    dir: PinDirection;
+}
+
+export const IC_SUMMARIES: Record<string, string> = {
+    '7400': 'Quad 2-input NAND',
+    '7402': 'Quad 2-input NOR',
+    '7404': 'Hex inverter',
+    '7408': 'Quad 2-input AND',
+    '7410': 'Triple 3-input NAND',
+    '7411': 'Triple 3-input AND',
+    '7420': 'Dual 4-input NAND',
+    '7421': 'Dual 4-input AND',
+    '7427': 'Triple 3-input NOR',
+    '7432': 'Quad 2-input OR',
+    '7474': 'Dual D flip-flop',
+    '7476': 'Dual JK flip-flop',
+    '7486': 'Quad 2-input XOR',
+    '7490': 'Decade counter',
+    '7447': 'BCD to 7-segment decoder',
+    '74138': '3-to-8 line decoder',
+    '74139': 'Dual 2-to-4 decoder',
+    '74148': '8-to-3 priority encoder',
+    '74151': '8-to-1 multiplexer',
+    '74153': 'Dual 4-to-1 multiplexer',
+    '74161': '4-bit binary counter',
+    '74164': '8-bit shift register',
+    '74165': '8-bit parallel-in shift register',
+    '74373': 'Octal D latch',
+    '74374': 'Octal D flip-flop',
+    '555': 'Timer',
+    'NE555': 'Timer',
+    '741': 'Op-amp',
+    'LM741': 'Op-amp',
+    'LM358': 'Dual op-amp',
+};
+
+function gate14(fn: (n: number) => string, dirs: Array<[number[], PinDirection]>): Record<number, PinInfo> {
+    const pins: Record<number, PinInfo> = {};
+    for (const [numbers, dir] of dirs) {
+        for (const n of numbers) pins[n] = { fn: fn(n), dir };
+    }
+    pins[7] = { fn: 'GND', dir: 'ground' };
+    pins[14] = { fn: 'VCC', dir: 'power' };
+    return pins;
+}
+
+const quad2 = (prefix: string): Record<number, PinInfo> => {
+    const pins: Record<number, PinInfo> = {};
+    const gates = [
+        { a: 1, b: 2, y: 3 },
+        { a: 4, b: 5, y: 6 },
+        { a: 9, b: 10, y: 8 },
+        { a: 12, b: 13, y: 11 },
+    ];
+    gates.forEach((g, i) => {
+        pins[g.a] = { fn: `${prefix}${i + 1}A`, dir: 'input' };
+        pins[g.b] = { fn: `${prefix}${i + 1}B`, dir: 'input' };
+        pins[g.y] = { fn: `${prefix}${i + 1}Y`, dir: 'output' };
+    });
+    pins[7] = { fn: 'GND', dir: 'ground' };
+    pins[14] = { fn: 'VCC', dir: 'power' };
+    return pins;
+};
+
+export const IC_PINS: Record<string, Record<number, PinInfo>> = {
+    '7400': quad2(''),
+    '7408': quad2(''),
+    '7432': quad2(''),
+    '7486': quad2(''),
+    '7402': {
+        1: { fn: '1Y', dir: 'output' }, 2: { fn: '1A', dir: 'input' }, 3: { fn: '1B', dir: 'input' },
+        4: { fn: '2Y', dir: 'output' }, 5: { fn: '2A', dir: 'input' }, 6: { fn: '2B', dir: 'input' },
+        7: { fn: 'GND', dir: 'ground' },
+        8: { fn: '3A', dir: 'input' }, 9: { fn: '3B', dir: 'input' }, 10: { fn: '3Y', dir: 'output' },
+        11: { fn: '4A', dir: 'input' }, 12: { fn: '4B', dir: 'input' }, 13: { fn: '4Y', dir: 'output' },
+        14: { fn: 'VCC', dir: 'power' },
+    },
+    '7404': {
+        1: { fn: '1A', dir: 'input' }, 2: { fn: '1Y', dir: 'output' },
+        3: { fn: '2A', dir: 'input' }, 4: { fn: '2Y', dir: 'output' },
+        5: { fn: '3A', dir: 'input' }, 6: { fn: '3Y', dir: 'output' },
+        7: { fn: 'GND', dir: 'ground' },
+        8: { fn: '4Y', dir: 'output' }, 9: { fn: '4A', dir: 'input' },
+        10: { fn: '5Y', dir: 'output' }, 11: { fn: '5A', dir: 'input' },
+        12: { fn: '6Y', dir: 'output' }, 13: { fn: '6A', dir: 'input' },
+        14: { fn: 'VCC', dir: 'power' },
+    },
+    '7410': gate14(
+        n => ({ 1: '1A', 2: '1B', 3: '2A', 4: '2B', 5: '2C', 6: '2Y', 8: '3Y', 9: '3A', 10: '3B', 11: '3C', 12: '1Y', 13: '1C' }[n] ?? String(n)),
+        [
+            [[1, 2, 13], 'input'], [[12], 'output'],
+            [[3, 4, 5], 'input'], [[6], 'output'],
+            [[9, 10, 11], 'input'], [[8], 'output'],
+        ]
+    ),
+    '7411': gate14(
+        n => ({ 1: '1A', 2: '1B', 3: '2A', 4: '2B', 5: '2C', 6: '2Y', 8: '3Y', 9: '3A', 10: '3B', 11: '3C', 12: '1Y', 13: '1C' }[n] ?? String(n)),
+        [
+            [[1, 2, 13], 'input'], [[12], 'output'],
+            [[3, 4, 5], 'input'], [[6], 'output'],
+            [[9, 10, 11], 'input'], [[8], 'output'],
+        ]
+    ),
+    '7427': gate14(
+        n => ({ 1: '1A', 2: '1B', 3: '2A', 4: '2B', 5: '2C', 6: '2Y', 8: '3Y', 9: '3A', 10: '3B', 11: '3C', 12: '1Y', 13: '1C' }[n] ?? String(n)),
+        [
+            [[1, 2, 13], 'input'], [[12], 'output'],
+            [[3, 4, 5], 'input'], [[6], 'output'],
+            [[9, 10, 11], 'input'], [[8], 'output'],
+        ]
+    ),
+    '7420': gate14(
+        n => ({ 1: '1A', 2: '1B', 4: '1C', 5: '1D', 6: '1Y', 8: '2Y', 9: '2A', 10: '2B', 12: '2C', 13: '2D' }[n] ?? String(n)),
+        [
+            [[1, 2, 4, 5], 'input'], [[6], 'output'],
+            [[9, 10, 12, 13], 'input'], [[8], 'output'],
+        ]
+    ),
+    '7421': gate14(
+        n => ({ 1: '1A', 2: '1B', 4: '1C', 5: '1D', 6: '1Y', 8: '2Y', 9: '2A', 10: '2B', 12: '2C', 13: '2D' }[n] ?? String(n)),
+        [
+            [[1, 2, 4, 5], 'input'], [[6], 'output'],
+            [[9, 10, 12, 13], 'input'], [[8], 'output'],
+        ]
+    ),
+    '7474': {
+        1: { fn: '1CLR', dir: 'input' }, 2: { fn: '1D', dir: 'input' },
+        3: { fn: '1CLK', dir: 'input' }, 4: { fn: '1PRE', dir: 'input' },
+        5: { fn: '1Q', dir: 'output' }, 6: { fn: '1Q̅', dir: 'output' },
+        7: { fn: 'GND', dir: 'ground' },
+        8: { fn: '2Q̅', dir: 'output' }, 9: { fn: '2Q', dir: 'output' },
+        10: { fn: '2PRE', dir: 'input' }, 11: { fn: '2CLK', dir: 'input' },
+        12: { fn: '2D', dir: 'input' }, 13: { fn: '2CLR', dir: 'input' },
+        14: { fn: 'VCC', dir: 'power' },
+    },
+    '555': {
+        1: { fn: 'GND', dir: 'ground' }, 2: { fn: 'TRIG', dir: 'input' },
+        3: { fn: 'OUT', dir: 'output' }, 4: { fn: 'RESET', dir: 'input' },
+        5: { fn: 'CTRL', dir: 'input' }, 6: { fn: 'THRESH', dir: 'input' },
+        7: { fn: 'DISCH', dir: 'output' }, 8: { fn: 'VCC', dir: 'power' },
+    },
+    'NE555': {
+        1: { fn: 'GND', dir: 'ground' }, 2: { fn: 'TRIG', dir: 'input' },
+        3: { fn: 'OUT', dir: 'output' }, 4: { fn: 'RESET', dir: 'input' },
+        5: { fn: 'CTRL', dir: 'input' }, 6: { fn: 'THRESH', dir: 'input' },
+        7: { fn: 'DISCH', dir: 'output' }, 8: { fn: 'VCC', dir: 'power' },
+    },
+    '741': {
+        1: { fn: 'OFFSET N1', dir: 'input' }, 2: { fn: 'IN-', dir: 'input' },
+        3: { fn: 'IN+', dir: 'input' }, 4: { fn: 'V-', dir: 'ground' },
+        5: { fn: 'OFFSET N2', dir: 'input' }, 6: { fn: 'OUT', dir: 'output' },
+        7: { fn: 'V+', dir: 'power' }, 8: { fn: 'NC', dir: 'nc' },
+    },
+    'LM741': {
+        1: { fn: 'OFFSET N1', dir: 'input' }, 2: { fn: 'IN-', dir: 'input' },
+        3: { fn: 'IN+', dir: 'input' }, 4: { fn: 'V-', dir: 'ground' },
+        5: { fn: 'OFFSET N2', dir: 'input' }, 6: { fn: 'OUT', dir: 'output' },
+        7: { fn: 'V+', dir: 'power' }, 8: { fn: 'NC', dir: 'nc' },
+    },
+    'LM358': {
+        1: { fn: 'OUT1', dir: 'output' }, 2: { fn: 'IN1-', dir: 'input' },
+        3: { fn: 'IN1+', dir: 'input' }, 4: { fn: 'GND', dir: 'ground' },
+        5: { fn: 'IN2+', dir: 'input' }, 6: { fn: 'IN2-', dir: 'input' },
+        7: { fn: 'OUT2', dir: 'output' }, 8: { fn: 'VCC', dir: 'power' },
+    },
+};
+
+export function pinInfo(type: string, pin: number): PinInfo | undefined {
+    return IC_PINS[type]?.[pin];
+}
+
+export function pinFunction(type: string, pin: number): string | undefined {
+    return pinInfo(type, pin)?.fn;
+}
+
+export function componentSummary(type: string): string | undefined {
+    return IC_SUMMARIES[type];
+}
+
+/** Pins that drive the net (for contention checks). */
+export function outputPins(type: string): number[] {
+    const pins = IC_PINS[type];
+    if (!pins) return [];
+    return Object.entries(pins)
+        .filter(([, info]) => info.dir === 'output')
+        .map(([pin]) => parseInt(pin, 10));
+}

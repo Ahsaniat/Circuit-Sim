@@ -1,5 +1,6 @@
 import { CircuitIR, ComponentIR } from '../types';
 import { Netlist } from '../simulation/Netlist';
+import { outputPins } from '../components/PinDatabase';
 
 /**
  * Electrical Rule Check. Operates on the extracted netlist and reports
@@ -110,7 +111,27 @@ export function runErc(ir: CircuitIR, netlist: Netlist, unsupported: Set<string>
         }
     }
 
-    // 5. No power source actually wired into the circuit.
+    // 5. Output contention: two driven outputs on one net.
+    const outputsByNet = new Map<number, string[]>();
+    for (const comp of ir.components) {
+        for (const pin of outputPins(comp.type)) {
+            const netId = netlist.pinNet.get(`${comp.id}:${pin}`);
+            if (netId === undefined) continue;
+            const list = outputsByNet.get(netId) ?? [];
+            list.push(`${comp.id}.${pin}`);
+            outputsByNet.set(netId, list);
+        }
+    }
+    for (const pins of outputsByNet.values()) {
+        if (pins.length > 1) {
+            add({
+                severity: 'error',
+                message: `Output conflict: ${pins.join(' and ')} drive the same net`,
+            });
+        }
+    }
+
+    // 6. No power source actually wired into the circuit.
     const powerInUse = netlist.nets.some(net =>
         net.power !== undefined &&
         (net.pins.length > 0 || netlist.wireNet.includes(net.id))

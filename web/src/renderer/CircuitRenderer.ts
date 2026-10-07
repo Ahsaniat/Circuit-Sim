@@ -6,6 +6,7 @@ import { CircuitHistory } from '../history/CircuitHistory';
 import { buildSvg } from '../export/SvgExporter';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
+import { componentSummary } from '../components/PinDatabase';
 
 // Wire colors used while a simulation is active.
 const SIM_VALUE_COLORS: Record<string, string> = {
@@ -649,7 +650,9 @@ export class CircuitRenderer {
                 const comp = this.circuitIR.components.find(c => c.id === element.id);
                 if (comp && comp.id !== this.hoveredComponentId) {
                     this.hoveredComponentId = comp.id;
-                    const label = comp.value ? `${comp.id} (${comp.type}: ${comp.value})` : `${comp.id} (${comp.type})`;
+                    const summary = componentSummary(comp.type);
+                    const detail = summary ? `${comp.type} — ${summary}` : comp.type;
+                    const label = comp.value ? `${comp.id} (${detail}, ${comp.value})` : `${comp.id} (${detail})`;
                     this.showTooltip(e.clientX, e.clientY, label);
                 } else if (comp) {
                     // Update tooltip position
