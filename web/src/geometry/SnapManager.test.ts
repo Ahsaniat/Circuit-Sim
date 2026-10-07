@@ -41,6 +41,20 @@ describe('SnapManager.findNearestHole', () => {
         expect(snap.snapPosition(point).snapped).toBe(false);
         expect(snap.snapPosition(point, 1.5).snapped).toBe(true);
     });
+
+    it('finds holes near the board edges', () => {
+        for (const col of [1, 2, 62, 63]) {
+            const target = geo.getHolePosition(col, 'E');
+            const result = snap.snapPosition({ x: target.x + 0.3, y: target.y + 0.3 });
+            expect(result.snapped).toBe(true);
+            expect(result.col).toBe(col);
+        }
+    });
+
+    it('does not snap for points far outside the board', () => {
+        expect(snap.snapPosition({ x: -100, y: -100 }).snapped).toBe(false);
+        expect(snap.snapPosition({ x: 1000, y: 1000 }).snapped).toBe(false);
+    });
 });
 
 describe('SnapManager.snapICComponent', () => {

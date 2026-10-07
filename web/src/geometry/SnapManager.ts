@@ -120,35 +120,32 @@ export class SnapManager {
      * Searches main rows (A-J) and power rail rows (TOP+, TOP-, BOTTOM+, BOTTOM-)
      */
     findNearestHole(pos: Position, radius: number = SNAP_RADIUS): SnapResult {
+        // Windowed search: only columns that can contain a hole within the
+        // radius need checking, which keeps drag events cheap (≤ ~9×14
+        // instead of 14×63 distance computations).
+        const spacing = BreadboardGeometry.HOLE_SPACING;
+        const colGuess = Math.round((pos.x - this.geometry.holesStartX) / spacing) + 1;
+        const colSpan = Math.max(1, Math.ceil(radius / spacing) + 1);
+        const minCol = Math.max(1, colGuess - colSpan);
+        const maxCol = Math.min(BreadboardGeometry.NUM_COLS, colGuess + colSpan);
+
         let nearestHole: HolePosition | undefined;
         let minDistance = Infinity;
-        
-        // Check all main rows
-        for (const row of BreadboardGeometry.ALL_ROWS) {
-            for (let col = 1; col <= BreadboardGeometry.NUM_COLS; col++) {
+
+        for (const row of BreadboardGeometry.ALL_ROWS_WITH_RAILS) {
+            for (let col = minCol; col <= maxCol; col++) {
                 const hole = this.geometry.getHolePosition(col, row);
-                const distance = Math.sqrt((pos.x - hole.x) ** 2 + (pos.y - hole.y) ** 2);
-                
+                const dx = pos.x - hole.x;
+                const dy = pos.y - hole.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
                 if (distance < minDistance) {
                     minDistance = distance;
                     nearestHole = hole;
                 }
             }
         }
-        
-        // Check power rail rows
-        for (const row of BreadboardGeometry.RAIL_ROWS) {
-            for (let col = 1; col <= BreadboardGeometry.NUM_COLS; col++) {
-                const hole = this.geometry.getHolePosition(col, row);
-                const distance = Math.sqrt((pos.x - hole.x) ** 2 + (pos.y - hole.y) ** 2);
-                
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    nearestHole = hole;
-                }
-            }
-        }
-        
+
         return {
             snapped: minDistance <= radius,
             hole: nearestHole,
