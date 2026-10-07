@@ -207,21 +207,31 @@ void IRGenerator::layoutComponents(CircuitIR& ir) {
         maxHeight = std::max(maxHeight, board.height);
     }
     
-    // Place ICs in a row below boards (or on board if breadboard exists)
+    // Place ICs in rows below boards (or on the first board if one exists)
     float icStartY = currentY;
     currentX = 10.0f;
+    float wrapRight = 220.0f;
     
     if (!ir.boards.empty()) {
-        // Place ICs on the breadboard
         auto& board = ir.boards[0];
         currentX = board.position.x + 20.0f;
         icStartY = board.position.y + 10.0f;
+        wrapRight = board.position.x + board.width - 10.0f;
     }
     
+    // Wrap to a new row instead of letting components run off the board.
+    const float rowStartX = currentX;
+    float rowHeight = 0.0f;
     for (auto& comp : ir.components) {
+        if (currentX + comp.width > wrapRight && currentX > rowStartX) {
+            currentX = rowStartX;
+            icStartY += rowHeight + 12.0f;
+            rowHeight = 0.0f;
+        }
         comp.position = Position(currentX, icStartY);
         componentPositions_[comp.id] = comp.position;
         currentX += comp.width + 15.0f;
+        rowHeight = std::max(rowHeight, comp.height);
     }
 }
 
@@ -236,15 +246,16 @@ Position IRGenerator::getPinPosition(const std::string& componentId, int pinNumb
     // Check if it's a board
     auto symbol = symbolTable_.lookupSymbol(componentId);
     if (symbol && symbol->kind == SymbolKind::BOARD) {
-        // Board pin positions: row-major layout
+        // Board connection points follow the same convention as the web app:
+        // pin N maps to column ((N-1) % 63) + 1; the first 63 pins are in
+        // row D (top half) and later pins in row G (bottom half).
         BoardLayout layout = getBoardLayout(symbol->typeId);
-        int row = (pinNumber - 1) / layout.columns;
-        int col = (pinNumber - 1) % layout.columns;
-        
-        return Position(
-            compPos.x + col * layout.holeSpacing + 5.0f,
-            compPos.y + row * layout.holeSpacing + 5.0f
-        );
+        const int boardColumns = 63;
+        int col = (pinNumber - 1) % boardColumns;
+        bool topHalf = pinNumber <= boardColumns;
+        float x = compPos.x + 5.0f + col * layout.holeSpacing;
+        float y = compPos.y + (topHalf ? 7.62f : 20.32f);
+        return Position(x, y);
     }
     
     // IC pin positions: DIP layout

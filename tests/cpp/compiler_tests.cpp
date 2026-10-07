@@ -162,6 +162,18 @@ void testHugePinNumberFails() {
     CHECK_CONTAINS(result.errors, "Invalid pin number");
 }
 
+void testHighBoardPinCompiles() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@comp A1 7408\n"
+        "@board B1 breadboard_830\n"
+        "map (\n"
+        "  (A1 pin 3 -> B1 pin 500)\n"
+        ")\n");
+    CHECK(result.success);
+    CHECK_CONTAINS(result.json, "\"B1\"");
+}
+
 } // namespace
 
 int main() {
@@ -176,6 +188,7 @@ int main() {
     testDuplicateMapFails();
     testInvalidPinTokenFails();
     testHugePinNumberFails();
+    testHighBoardPinCompiles();
 
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;
