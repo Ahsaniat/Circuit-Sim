@@ -22,7 +22,7 @@ CircuitSim is a visual circuit simulator with a domain-specific language. The ex
 ## ADR-002: Power Rail Snap Support
 
 **Date**: 2026-01-15
-**Status**: Proposed
+**Status**: Accepted (implemented; rail geometry aligned with the renderer on 2026-10-07)
 
 ### Context
 Wire terminals cannot snap to power rail holes (+ and - rails at top/bottom of breadboard). Only main rows (A-J) are supported in SnapManager.findNearestHole().
@@ -41,7 +41,7 @@ Wire terminals cannot snap to power rail holes (+ and - rails at top/bottom of b
 ## ADR-003: Component Library Extension
 
 **Date**: 2026-01-15
-**Status**: Proposed
+**Status**: Accepted (implemented for switch/display/buzzer/motor/power/crystal; comparator and LCD remain planned)
 
 ### Context
 Current component library is limited. Missing: switches, buttons, displays, buzzers, motors, power supply, crystal oscillators, comparators.
@@ -69,7 +69,7 @@ Each component gets:
 ## ADR-004: Wire Z-Order Rendering
 
 **Date**: 2026-01-15
-**Status**: Proposed
+**Status**: Accepted (implemented)
 
 ### Context
 Wires currently render on top of components, obscuring component details.
@@ -89,7 +89,7 @@ Change rendering order in CircuitRenderer.redraw():
 ## ADR-005: PNG Export Feature
 
 **Date**: 2026-01-15
-**Status**: Proposed
+**Status**: Accepted (implemented; export now renders the full circuit offscreen, SVG export added)
 
 ### Context
 No export functionality exists. Users cannot save circuit diagrams.

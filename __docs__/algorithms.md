@@ -3,11 +3,16 @@
 ## Snap System
 
 ### SnapManager.findNearestHole()
-**Complexity**: O(R × C) where R = number of rows, C = number of columns
+**Complexity**: O(R × W) where R = 14 rows and W = candidate columns within
+the snap radius (typically 3–9).
 
-**Description**: Brute force search through all breadboard holes to find nearest to given position.
+**Description**: Windowed search. The candidate column is derived from the
+pointer position, and only columns that can contain a hole within the radius
+are checked, so drag events stay cheap regardless of board width.
 
-**Current**: R=10 (rows A-J), C=63 → 630 iterations max
+**Before**: brute-force scan of all 14 × 63 = 882 holes per pointer move.
+**After**: 14 × W distance computations (≤ ~126 at the widest zoom-adapted
+radius), measured on every drag event.
 **After power rail support**: R=14 (A-J + 4 rail rows) → 882 iterations max
 
 **Rationale**: 

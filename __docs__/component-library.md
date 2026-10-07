@@ -91,37 +91,28 @@ This document details the new components being added to CircuitSim.
 
 ## Implementation Checklist
 
-### Phase 1: Footprint Definitions
-- [ ] Add switch footprints (SPST, SPDT, pushbutton)
-- [ ] Add display footprint (7-segment)
-- [ ] Add buzzer footprints (active, passive)
-- [ ] Add motor footprints (DC, servo)
-- [ ] Add power footprints (battery, regulator)
-- [ ] Add crystal footprint
-- [ ] Add comparator footprint
+### Shipped
+- [x] Switch footprints (SPST, SPDT, pushbutton)
+- [x] Display footprint (7-segment)
+- [x] Buzzer footprints (active, passive)
+- [x] Motor footprints (DC, servo)
+- [x] Power footprints (battery, regulator)
+- [x] Crystal footprint
+- [x] Render functions for all of the above
+- [x] Compiler keywords (`@switch_spst`, `@switch_spdt`, `@pushbutton`,
+      `@display_7seg`, `@buzzer`, `@passive_buzzer`, `@motor_dc`, `@servo`,
+      `@battery`, `@regulator`, `@crystal`)
+- [x] ComponentCategory union and footprint dispatch
 
-### Phase 2: Rendering Functions
-- [ ] renderSwitch() - toggle and pushbutton variants
-- [ ] renderDisplay() - 7-segment with segments
-- [ ] renderBuzzer() - cylindrical body
-- [ ] renderMotor() - DC and servo variants
-- [ ] renderPower() - battery and regulator
-- [ ] renderCrystal() - metal can body
-- [ ] renderComparator() - use existing IC renderer
+### Planned (not implemented)
+- [ ] Comparator (LM339) category
+- [ ] DPDT and slide switches
+- [ ] LCD/OLED displays
+- [ ] LM7812 and other regulators
+- [ ] Stepper motor model
 
-### Phase 3: Compiler Support
-- [ ] Add switch types to compiler
-- [ ] Add display types to compiler
-- [ ] Add buzzer types to compiler
-- [ ] Add motor types to compiler
-- [ ] Add power types to compiler
-- [ ] Add crystal types to compiler
-- [ ] Add comparator types to compiler
-
-### Phase 4: Type Definitions
-- [ ] Update ComponentCategory union type
-- [ ] Add component-specific value types
-- [ ] Update compiler type mappings
+Any component not listed under "Shipped" is a design note only; the
+compiler rejects unknown directives rather than silently accepting them.
 
 ## Testing Strategy
 
