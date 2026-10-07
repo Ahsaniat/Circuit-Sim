@@ -41,7 +41,7 @@ CompileResult Compiler::compile(const std::string& source) {
     
     // IR generation phase
     IRGenerator irGen(analyzer.getSymbolTable(), errorReporter);
-    CircuitIR ir = irGen.generate(*program);
+    CircuitIR ir = irGen.generate(*program, analyzer.getComponentBoards());
     
     result.success = true;
     result.json = ir.toJSON();

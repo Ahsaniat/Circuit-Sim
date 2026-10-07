@@ -25,6 +25,7 @@ enum class ASTNodeType {
     BOARD_DECL,
     IC_DEF,
     MAP_BLOCK,
+    PLACE,
     PIN_DECL,
     CONNECTION,
     PIN_REF
@@ -101,12 +102,22 @@ struct ICDefNode : ASTNode {
         , name(n) {}
 };
 
-// Map block: map (...)
+// Map block: map (...) or B1.map (...)
 struct MapBlockNode : ASTNode {
     std::vector<std::unique_ptr<ConnectionNode>> connections;
+    std::string boardId; // empty for a global map block
     
     MapBlockNode(SourceLocation loc)
         : ASTNode(ASTNodeType::MAP_BLOCK, loc) {}
+};
+
+// Explicit placement: place R1, R2 on B1
+struct PlaceNode : ASTNode {
+    std::vector<std::string> componentIds;
+    std::string boardId;
+    
+    PlaceNode(SourceLocation loc)
+        : ASTNode(ASTNodeType::PLACE, loc) {}
 };
 
 // Root program node
@@ -114,7 +125,8 @@ struct ProgramNode : ASTNode {
     std::vector<std::unique_ptr<CompDeclNode>> components;
     std::vector<std::unique_ptr<BoardDeclNode>> boards;
     std::vector<std::unique_ptr<ICDefNode>> icDefinitions;
-    std::unique_ptr<MapBlockNode> mapBlock;
+    std::vector<std::unique_ptr<MapBlockNode>> mapBlocks;
+    std::vector<std::unique_ptr<PlaceNode>> placements;
     
     ProgramNode(SourceLocation loc)
         : ASTNode(ASTNodeType::PROGRAM, loc) {}

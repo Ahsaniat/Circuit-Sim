@@ -21,6 +21,7 @@ public:
     
     bool analyze(const ProgramNode& program);
     const SymbolTable& getSymbolTable() const { return symbolTable_; }
+    const std::unordered_map<std::string, std::string>& getComponentBoards() const { return componentBoards_; }
 
 private:
     ErrorReporter& errorReporter_;
@@ -30,12 +31,17 @@ private:
     // Track used pins per component for conflict detection
     std::unordered_map<std::string, std::set<int>> usedPins_;
     
+    // Component-to-board assignment from `place` statements and scoped maps
+    std::unordered_map<std::string, std::string> componentBoards_;
+    std::unordered_map<std::string, std::string> assignmentOrigin_; // "place" | "map"
+    
     void initBuiltinICs();
     
     void analyzeCompDecl(const CompDeclNode& node);
     void analyzeBoardDecl(const BoardDeclNode& node);
     void analyzeICDef(const ICDefNode& node);
     void analyzeMapBlock(const MapBlockNode& node);
+    void analyzePlaceStatement(const PlaceNode& node);
     void analyzeConnection(const ConnectionNode& node);
     void analyzePinRef(const PinRefNode& node, bool isSource);
     

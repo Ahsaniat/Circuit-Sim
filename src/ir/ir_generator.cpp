@@ -142,8 +142,10 @@ BoardLayout IRGenerator::getBoardLayout(const std::string& type) {
     return boardLayouts_["breadboard_830"];
 }
 
-CircuitIR IRGenerator::generate(const ProgramNode& program) {
+CircuitIR IRGenerator::generate(const ProgramNode& program,
+                                const std::unordered_map<std::string, std::string>& componentBoards) {
     CircuitIR ir;
+    componentBoards_ = componentBoards;
     
     // Generate boards first (they define the workspace)
     for (const auto& board : program.boards) {
@@ -158,10 +160,8 @@ CircuitIR IRGenerator::generate(const ProgramNode& program) {
     // Layout components on the circuit
     layoutComponents(ir);
     
-    // Generate wires from map block
-    if (program.mapBlock) {
-        ir.wires = generateWires(*program.mapBlock);
-    }
+    // Generate wires from all map blocks (global and board-scoped)
+    ir.wires = generateWires(program);
     
     // Calculate total dimensions
     float maxX = 0, maxY = 0;
@@ -205,41 +205,68 @@ BoardIR IRGenerator::generateBoard(const BoardDeclNode& node) {
 void IRGenerator::layoutComponents(CircuitIR& ir) {
     float currentX = 10.0f;
     float currentY = 10.0f;
-    float maxHeight = 0;
     
-    // Place boards first
+    // Place boards first, stacked vertically
     for (auto& board : ir.boards) {
         board.position = Position(currentX, currentY);
         componentPositions_[board.id] = board.position;
         currentY += board.height + 20.0f;
-        maxHeight = std::max(maxHeight, board.height);
     }
     
-    // Place ICs in rows below boards (or on the first board if one exists)
-    float icStartY = currentY;
-    currentX = 10.0f;
-    float wrapRight = 220.0f;
-    
-    if (!ir.boards.empty()) {
-        auto& board = ir.boards[0];
-        currentX = board.position.x + 20.0f;
-        icStartY = board.position.y + 10.0f;
-        wrapRight = board.position.x + board.width - 10.0f;
+    // Per-board placement cursors
+    struct Cursor {
+        float x;
+        float y;
+        float rowStartX;
+        float rowHeight;
+    };
+    std::unordered_map<std::string, Cursor> cursors;
+    for (auto& board : ir.boards) {
+        float startX = board.position.x + 20.0f;
+        cursors[board.id] = Cursor{startX, board.position.y + 10.0f, startX, 0.0f};
     }
     
-    // Wrap to a new row instead of letting components run off the board.
-    const float rowStartX = currentX;
-    float rowHeight = 0.0f;
+    const std::string fallbackBoard = ir.boards.empty() ? std::string() : ir.boards[0].id;
+    float noBoardX = 10.0f;
+    float noBoardY = currentY;
+    
     for (auto& comp : ir.components) {
-        if (currentX + comp.width > wrapRight && currentX > rowStartX) {
-            currentX = rowStartX;
-            icStartY += rowHeight + 12.0f;
-            rowHeight = 0.0f;
+        std::string boardId;
+        auto assigned = componentBoards_.find(comp.id);
+        if (assigned != componentBoards_.end()) {
+            boardId = assigned->second;
         }
-        comp.position = Position(currentX, icStartY);
+        if (boardId.empty()) {
+            boardId = fallbackBoard;
+        }
+        
+        auto cursorIt = cursors.find(boardId);
+        if (cursorIt == cursors.end()) {
+            // No board to place on: simple row layout below the boards.
+            comp.position = Position(noBoardX, noBoardY);
+            componentPositions_[comp.id] = comp.position;
+            noBoardX += comp.width + 15.0f;
+            continue;
+        }
+        
+        float wrapRight = 220.0f;
+        for (const auto& board : ir.boards) {
+            if (board.id == boardId) {
+                wrapRight = board.position.x + board.width - 10.0f;
+                break;
+            }
+        }
+        
+        Cursor& cursor = cursorIt->second;
+        if (cursor.x + comp.width > wrapRight && cursor.x > cursor.rowStartX) {
+            cursor.x = cursor.rowStartX;
+            cursor.y += cursor.rowHeight + 12.0f;
+            cursor.rowHeight = 0.0f;
+        }
+        comp.position = Position(cursor.x, cursor.y);
         componentPositions_[comp.id] = comp.position;
-        currentX += comp.width + 15.0f;
-        rowHeight = std::max(rowHeight, comp.height);
+        cursor.x += comp.width + 15.0f;
+        cursor.rowHeight = std::max(cursor.rowHeight, comp.height);
     }
 }
 
@@ -286,7 +313,7 @@ Position IRGenerator::getPinPosition(const std::string& componentId, int pinNumb
     return Position(x, y);
 }
 
-std::vector<Wire> IRGenerator::generateWires(const MapBlockNode& mapBlock) {
+std::vector<Wire> IRGenerator::generateWires(const ProgramNode& program) {
     std::vector<Wire> wires;
     
     // Wire colors for visual distinction
@@ -296,26 +323,28 @@ std::vector<Wire> IRGenerator::generateWires(const MapBlockNode& mapBlock) {
     };
     size_t colorIndex = 0;
     
-    for (const auto& conn : mapBlock.connections) {
-        if (!conn->source) continue;
-        
-        Position fromPos = getPinPosition(conn->source->componentId, conn->source->pinNumber);
-        PinPosition from(conn->source->componentId, conn->source->pinNumber, fromPos);
-        
-        std::string wireColor = colors[colorIndex % colors.size()];
-        
-        for (const auto& dest : conn->destinations) {
-            if (!dest) continue;
+    for (const auto& mapBlock : program.mapBlocks) {
+        for (const auto& conn : mapBlock->connections) {
+            if (!conn->source) continue;
             
-            Position toPos = getPinPosition(dest->componentId, dest->pinNumber);
-            PinPosition to(dest->componentId, dest->pinNumber, toPos);
+            Position fromPos = getPinPosition(conn->source->componentId, conn->source->pinNumber);
+            PinPosition from(conn->source->componentId, conn->source->pinNumber, fromPos);
             
-            Wire wire(from, to);
-            wire.color = wireColor;
-            wires.push_back(wire);
+            std::string wireColor = colors[colorIndex % colors.size()];
+            
+            for (const auto& dest : conn->destinations) {
+                if (!dest) continue;
+                
+                Position toPos = getPinPosition(dest->componentId, dest->pinNumber);
+                PinPosition to(dest->componentId, dest->pinNumber, toPos);
+                
+                Wire wire(from, to);
+                wire.color = wireColor;
+                wires.push_back(wire);
+            }
+            
+            colorIndex++;
         }
-        
-        colorIndex++;
     }
     
     return wires;

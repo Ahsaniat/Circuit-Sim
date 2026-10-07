@@ -149,7 +149,7 @@ void testCustomICDefinition() {
     CHECK(result.success);
 }
 
-void testDuplicateMapFails() {
+void testMultipleMapBlocksCompile() {
     Compiler compiler;
     auto result = compiler.compile(
         "@comp A1 7408\n"
@@ -159,8 +159,56 @@ void testDuplicateMapFails() {
         "map (\n"
         "  (A1 pin 3 -> A1 pin 4)\n"
         ")\n");
+    CHECK(result.success);
+}
+
+void testScopedMapsAndPlacementCompile() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@board B1 breadboard_830\n"
+        "@board B2 breadboard_830\n"
+        "@resistor R1 330\n"
+        "@led LED1 red\n"
+        "@resistor R2 330\n"
+        "place R2 on B2\n"
+        "B1.map (\n"
+        "  (R1 pin 1 -> LED1 pin 1)\n"
+        ")\n"
+        "B2.map (\n"
+        "  (R2 pin 1 -> B2 pin 5)\n"
+        ")\n"
+        "map (\n"
+        "  (R1 pin 2 -> R2 pin 2)\n"
+        ")\n");
+    CHECK(result.success);
+    CHECK_CONTAINS(result.json, "\"B2\"");
+}
+
+void testUnknownBoardScopeFails() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@comp A1 7408\n"
+        "B9.map (\n"
+        "  (A1 pin 1 -> A1 pin 2)\n"
+        ")\n");
     CHECK(!result.success);
-    CHECK_CONTAINS(result.errors, "Duplicate 'map' block");
+    CHECK_CONTAINS(result.errors, "Unknown board");
+}
+
+void testScopeConflictFails() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@board B1 breadboard_830\n"
+        "@board B2 breadboard_830\n"
+        "@comp A1 7408\n"
+        "B1.map (\n"
+        "  (A1 pin 1 -> A1 pin 2)\n"
+        ")\n"
+        "B2.map (\n"
+        "  (A1 pin 3 -> A1 pin 4)\n"
+        ")\n");
+    CHECK(!result.success);
+    CHECK_CONTAINS(result.errors, "referenced by both");
 }
 
 void testInvalidPinTokenFails() {
@@ -239,7 +287,10 @@ int main() {
     testInvalidPinNumberFails();
     testBoardPinConflictFails();
     testCustomICDefinition();
-    testDuplicateMapFails();
+    testMultipleMapBlocksCompile();
+    testScopedMapsAndPlacementCompile();
+    testUnknownBoardScopeFails();
+    testScopeConflictFails();
     testInvalidPinTokenFails();
     testHugePinNumberFails();
     testHighBoardPinCompiles();

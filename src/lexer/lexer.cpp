@@ -7,6 +7,8 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"def", TokenType::DEF},
     {"map", TokenType::MAP},
     {"pin", TokenType::PIN},
+    {"place", TokenType::PLACE},
+    {"on", TokenType::ON},
     {"input", TokenType::TYPE_INPUT},
     {"output", TokenType::TYPE_OUTPUT},
     {"gnd", TokenType::TYPE_GND},
@@ -91,6 +93,7 @@ Token Lexer::scanToken() {
         case '(': return makeToken(TokenType::LPAREN, "(");
         case ')': return makeToken(TokenType::RPAREN, ")");
         case ',': return makeToken(TokenType::COMMA, ",");
+        case '.': return makeToken(TokenType::DOT, ".");
         case '\n': return makeToken(TokenType::NEWLINE, "\\n");
         
         case '-':

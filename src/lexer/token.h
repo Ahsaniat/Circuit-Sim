@@ -13,6 +13,9 @@ enum class TokenType {
     DEF,        // def
     MAP,        // map
     PIN,        // pin
+    DOT,        // .
+    PLACE,      // place
+    ON,         // on
     
     // Component-specific keywords (all map to component declarations)
     RESISTOR,       // @resistor
@@ -118,6 +121,9 @@ inline const char* tokenTypeToString(TokenType type) {
         case TokenType::DEF: return "DEF";
         case TokenType::MAP: return "MAP";
         case TokenType::PIN: return "PIN";
+        case TokenType::DOT: return "DOT";
+        case TokenType::PLACE: return "PLACE";
+        case TokenType::ON: return "ON";
         case TokenType::RESISTOR: return "RESISTOR";
         case TokenType::CAPACITOR: return "CAPACITOR";
         case TokenType::INDUCTOR: return "INDUCTOR";

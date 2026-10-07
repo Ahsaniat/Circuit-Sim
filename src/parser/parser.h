@@ -25,6 +25,7 @@ private:
     const Token& previous() const;
     const Token& advance();
     bool isAtEnd() const;
+    TokenType peekType(size_t offset) const;
     bool check(TokenType type) const;
     bool match(TokenType type);
     bool match(std::initializer_list<TokenType> types);
@@ -45,6 +46,7 @@ private:
     std::unique_ptr<BoardDeclNode> parseBoardDecl();
     std::unique_ptr<ICDefNode> parseICDef();
     std::unique_ptr<MapBlockNode> parseMapBlock();
+    std::unique_ptr<PlaceNode> parsePlaceStatement();
     std::unique_ptr<ConnectionNode> parseConnection();
     std::unique_ptr<PinRefNode> parsePinRef();
     std::unique_ptr<PinDeclNode> parsePinDecl();

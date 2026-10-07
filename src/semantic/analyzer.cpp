@@ -145,12 +145,88 @@ bool SemanticAnalyzer::analyze(const ProgramNode& program) {
         analyzeBoardDecl(*board);
     }
     
-    // Third pass: validate map block
-    if (program.mapBlock) {
-        analyzeMapBlock(*program.mapBlock);
+    // Third pass: validate map blocks and explicit placements.
+    for (const auto& mapBlock : program.mapBlocks) {
+        if (!mapBlock->boardId.empty()) {
+            auto symbol = symbolTable_.lookupSymbol(mapBlock->boardId);
+            if (!symbol || symbol->kind != SymbolKind::BOARD) {
+                reportError("Unknown board: '" + mapBlock->boardId + "'", mapBlock->location);
+                continue;
+            }
+        }
+        analyzeMapBlock(*mapBlock);
+    }
+    
+    for (const auto& place : program.placements) {
+        analyzePlaceStatement(*place);
+    }
+    
+    // Scoped maps assign the components they first reference; explicit
+    // placements win. A component claimed by two scoped maps without an
+    // explicit place is ambiguous and reported.
+    for (const auto& mapBlock : program.mapBlocks) {
+        if (mapBlock->boardId.empty()) continue;
+        for (const auto& conn : mapBlock->connections) {
+            if (!conn->source) continue;
+            std::vector<const PinRefNode*> refs;
+            refs.push_back(conn->source.get());
+            for (const auto& dest : conn->destinations) {
+                if (dest) refs.push_back(dest.get());
+            }
+            for (const PinRefNode* ref : refs) {
+                auto symbol = symbolTable_.lookupSymbol(ref->componentId);
+                if (!symbol || symbol->kind != SymbolKind::COMPONENT) continue;
+                auto existing = componentBoards_.find(ref->componentId);
+                if (existing == componentBoards_.end()) {
+                    componentBoards_[ref->componentId] = mapBlock->boardId;
+                    assignmentOrigin_[ref->componentId] = "map";
+                } else if (existing->second != mapBlock->boardId &&
+                           assignmentOrigin_[ref->componentId] == "map") {
+                    reportError("Component '" + ref->componentId + "' is referenced by both '" +
+                                existing->second + ".map' and '" + mapBlock->boardId +
+                                ".map'; use 'place' to choose a board", ref->location);
+                }
+            }
+        }
+    }
+    
+    // Everything unassigned belongs to the first board.
+    if (!program.boards.empty()) {
+        const std::string firstBoard = program.boards[0]->identifier;
+        for (const auto& comp : program.components) {
+            if (componentBoards_.find(comp->identifier) == componentBoards_.end()) {
+                componentBoards_[comp->identifier] = firstBoard;
+            }
+        }
     }
     
     return !errorReporter_.hasErrors();
+}
+
+void SemanticAnalyzer::analyzePlaceStatement(const PlaceNode& node) {
+    auto boardSymbol = symbolTable_.lookupSymbol(node.boardId);
+    if (!boardSymbol || boardSymbol->kind != SymbolKind::BOARD) {
+        reportError("Unknown board: '" + node.boardId + "'", node.location);
+        return;
+    }
+    for (const auto& id : node.componentIds) {
+        auto symbol = symbolTable_.lookupSymbol(id);
+        if (!symbol) {
+            reportError("Undefined component: '" + id + "'", node.location);
+            continue;
+        }
+        if (symbol->kind != SymbolKind::COMPONENT) {
+            reportError("'" + id + "' is a board, not a component", node.location);
+            continue;
+        }
+        auto existing = componentBoards_.find(id);
+        if (existing != componentBoards_.end() && existing->second != node.boardId) {
+            reportError("Component '" + id + "' is already placed on '" + existing->second + "'", node.location);
+            continue;
+        }
+        componentBoards_[id] = node.boardId;
+        assignmentOrigin_[id] = "place";
+    }
 }
 
 void SemanticAnalyzer::analyzeCompDecl(const CompDeclNode& node) {

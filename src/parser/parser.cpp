@@ -31,6 +31,12 @@ bool Parser::check(TokenType type) const {
     return peek().type == type;
 }
 
+TokenType Parser::peekType(size_t offset) const {
+    size_t index = current_ + offset;
+    if (index >= tokens_.size()) return TokenType::END_OF_FILE;
+    return tokens_[index].type;
+}
+
 bool Parser::match(TokenType type) {
     if (check(type)) {
         advance();
@@ -221,18 +227,28 @@ std::unique_ptr<ProgramNode> Parser::parse() {
             } else if (match(TokenType::DEF)) {
                 auto icDef = parseICDef();
                 if (icDef) program->icDefinitions.push_back(std::move(icDef));
-            } else if (match(TokenType::MAP)) {
-                SourceLocation mapLocation = previous().location;
+            } else if (check(TokenType::PLACE)) {
+                auto place = parsePlaceStatement();
+                if (place) program->placements.push_back(std::move(place));
+            } else if (check(TokenType::IDENTIFIER) &&
+                       (peekType(1) == TokenType::MAP ||
+                        (peekType(1) == TokenType::DOT && peekType(2) == TokenType::MAP))) {
+                // Board-scoped map: B1.map (...) or B1 map (...)
+                Token boardToken = advance();
+                match(TokenType::DOT);
+                consume(TokenType::MAP, "Expected 'map' after board name");
                 auto mapBlock = parseMapBlock();
-                if (program->mapBlock) {
-                    errorReporter_.report("parser",
-                        "Duplicate 'map' block; merge the connections into a single block",
-                        mapLocation);
-                } else {
-                    program->mapBlock = std::move(mapBlock);
+                if (mapBlock) {
+                    mapBlock->boardId = boardToken.lexeme;
+                    program->mapBlocks.push_back(std::move(mapBlock));
+                }
+            } else if (match(TokenType::MAP)) {
+                auto mapBlock = parseMapBlock();
+                if (mapBlock) {
+                    program->mapBlocks.push_back(std::move(mapBlock));
                 }
             } else {
-                reportError("Expected component declaration, '@board', 'def', or 'map'");
+                reportError("Expected component declaration, '@board', 'def', 'place' or 'map'");
                 synchronize();
             }
         } catch (const std::exception& e) {
@@ -357,6 +373,26 @@ std::unique_ptr<PinDeclNode> Parser::parsePinDecl() {
     }
     
     return std::make_unique<PinDeclNode>(pinName.lexeme, pinType, loc);
+}
+
+// place R1, R2 on B1
+std::unique_ptr<PlaceNode> Parser::parsePlaceStatement() {
+    SourceLocation loc = peek().location;
+    consume(TokenType::PLACE, "Expected 'place'");
+    
+    auto place = std::make_unique<PlaceNode>(loc);
+    do {
+        Token id = consume(TokenType::IDENTIFIER, "Expected component identifier after 'place'");
+        if (id.type == TokenType::UNKNOWN) return nullptr;
+        place->componentIds.push_back(id.lexeme);
+    } while (match(TokenType::COMMA));
+    
+    consume(TokenType::ON, "Expected 'on' in place statement");
+    Token board = consume(TokenType::IDENTIFIER, "Expected board identifier after 'on'");
+    if (board.type == TokenType::UNKNOWN) return nullptr;
+    place->boardId = board.lexeme;
+    
+    return place;
 }
 
 // map ( ... )

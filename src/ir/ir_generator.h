@@ -28,11 +28,15 @@ class IRGenerator {
 public:
     IRGenerator(const SymbolTable& symbolTable, ErrorReporter& errorReporter);
     
-    CircuitIR generate(const ProgramNode& program);
+    CircuitIR generate(const ProgramNode& program,
+                       const std::unordered_map<std::string, std::string>& componentBoards);
 
 private:
     const SymbolTable& symbolTable_;
     ErrorReporter& errorReporter_;
+    
+    // Component-to-board assignment (from the semantic analyzer)
+    std::unordered_map<std::string, std::string> componentBoards_;
     
     std::unordered_map<std::string, ICLayout> icLayouts_;
     std::unordered_map<std::string, BoardLayout> boardLayouts_;
@@ -42,7 +46,7 @@ private:
     
     ComponentIR generateComponent(const CompDeclNode& node);
     BoardIR generateBoard(const BoardDeclNode& node);
-    std::vector<Wire> generateWires(const MapBlockNode& mapBlock);
+    std::vector<Wire> generateWires(const ProgramNode& program);
     
     void layoutComponents(CircuitIR& ir);
     Position getPinPosition(const std::string& componentId, int pinNumber);
