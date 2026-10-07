@@ -65,6 +65,7 @@ class App {
         // Theme
         this.theme = new Theme();
         this.theme.mount(document.getElementById('theme-btn')!);
+        this.theme.setOnChange(() => this.renderer.refreshTheme());
 
         // Toast notifications
         this.toast = new Toast();
