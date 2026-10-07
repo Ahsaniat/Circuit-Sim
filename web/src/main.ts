@@ -226,6 +226,7 @@ class App {
                 applyLayout(ir, this.pendingLayout);
                 this.pendingLayout = null;
             }
+            this.codeEditor.clearError();
             this.renderer.render(ir);
             this.statusBar.setStatus('Compiled', 'success');
             this.statusBar.setStats(ir.components.length, ir.wires.length);
@@ -234,6 +235,7 @@ class App {
             this.scheduleAutosave();
         } catch (err) {
             if (err instanceof CompileError) {
+                this.codeEditor.setError(err.line, err.column, err.message);
                 this.showError(err.message);
                 this.toast.error(err.message);
             } else {

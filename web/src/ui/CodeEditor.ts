@@ -1,8 +1,24 @@
 /**
- * CodeEditor — Enhanced code editor with line numbers and syntax highlighting
+ * CodeEditor — CodeMirror 6 based DSL editor.
+ *
+ * Replaces the previous textarea overlay: real undo history, incremental
+ * parsing, autocomplete for @keywords, inline compile diagnostics and a
+ * theme-aware presentation driven by CSS custom properties.
  */
+import { basicSetup } from 'codemirror';
+import { EditorState, StateEffect, StateField } from '@codemirror/state';
+import {
+    EditorView,
+    keymap,
+    Decoration,
+    DecorationSet,
+} from '@codemirror/view';
+import { indentWithTab } from '@codemirror/commands';
+import { StreamLanguage, syntaxHighlighting, HighlightStyle } from '@codemirror/language';
+import { autocompletion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
+import { setDiagnostics } from '@codemirror/lint';
+import { tags } from '@lezer/highlight';
 
-// DSL syntax tokens for highlighting
 const DSL_KEYWORDS = ['map', 'pin', 'def', 'input', 'output', 'gnd', 'vcc'];
 const DSL_COMPONENT_TYPES = [
     'resistor', 'capacitor', 'inductor', 'potentiometer',
@@ -23,62 +39,180 @@ const DSL_COMPONENT_TYPES = [
     'crystal', 'comp', 'board',
 ];
 
+const dslLanguage = StreamLanguage.define({
+    name: 'circuitsim',
+    token(stream) {
+        if (stream.match('//')) {
+            stream.skipToEnd();
+            return 'comment';
+        }
+        if (stream.match(/@[A-Za-z_][A-Za-z0-9_]*/)) {
+            return 'keyword';
+        }
+        if (stream.match('->')) {
+            return 'operator';
+        }
+        if (stream.match(/\d+(?:\.\d+)?[A-Za-z%]*/)) {
+            return 'number';
+        }
+        if (stream.match(/[A-Za-z_][A-Za-z0-9_]*/)) {
+            const word = stream.current();
+            return DSL_KEYWORDS.includes(word) ? 'keyword' : 'variableName';
+        }
+        if (stream.match(/[()]/)) {
+            return 'bracket';
+        }
+        if (stream.match(',')) {
+            return 'punctuation';
+        }
+        stream.next();
+        return null;
+    },
+});
+
+const dslHighlight = HighlightStyle.define([
+    { tag: tags.comment, color: 'var(--syntax-comment)', fontStyle: 'italic' },
+    { tag: tags.keyword, color: 'var(--syntax-keyword)', fontWeight: '500' },
+    { tag: tags.number, color: 'var(--syntax-number)' },
+    { tag: tags.operator, color: 'var(--syntax-arrow)', fontWeight: '600' },
+    { tag: tags.bracket, color: 'var(--syntax-paren)' },
+    { tag: tags.punctuation, color: 'var(--syntax-paren)' },
+    { tag: tags.variableName, color: 'var(--syntax-component)' },
+]);
+
+const editorTheme = EditorView.theme({
+    '&': {
+        height: '100%',
+        fontSize: '12px',
+        backgroundColor: 'var(--editor-bg)',
+        color: 'var(--text-primary)',
+    },
+    '.cm-content': {
+        fontFamily: "'JetBrains Mono', 'SF Mono', 'Consolas', 'Monaco', monospace",
+        caretColor: 'var(--accent)',
+        padding: '8px 0',
+    },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
+    '.cm-gutters': {
+        backgroundColor: 'var(--editor-gutter)',
+        color: 'var(--text-tertiary)',
+        border: 'none',
+        borderRight: '1px solid var(--border-secondary)',
+    },
+    '.cm-activeLine': { backgroundColor: 'var(--editor-line-hl)' },
+    '.cm-activeLineGutter': { backgroundColor: 'var(--editor-line-hl)' },
+    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, .cm-content ::selection': {
+        backgroundColor: 'var(--accent-muted)',
+    },
+    '.cm-tooltip': {
+        backgroundColor: 'var(--bg-elevated)',
+        border: '1px solid var(--border-primary)',
+        color: 'var(--text-primary)',
+    },
+    '.cm-tooltip-autocomplete ul li[aria-selected]': {
+        backgroundColor: 'var(--accent-muted)',
+        color: 'var(--text-primary)',
+    },
+});
+
+function dslCompletions(context: CompletionContext): CompletionResult | null {
+    const word = context.matchBefore(/@?[A-Za-z_][A-Za-z0-9_]*/);
+    if (!word || (word.from === word.to && !context.explicit)) return null;
+    const options = [
+        ...DSL_COMPONENT_TYPES.map(type => ({ label: `@${type}`, type: 'keyword' })),
+        ...DSL_KEYWORDS.map(keyword => ({ label: keyword, type: 'keyword' })),
+    ];
+    return { from: word.from, options, validFor: /^@?[A-Za-z_][A-Za-z0-9_]*$/ };
+}
+
+// Error-line highlight controlled by a state effect.
+const setErrorLineEffect = StateEffect.define<number | null>();
+const errorLineField = StateField.define<DecorationSet>({
+    create: () => Decoration.none,
+    update(decorations, tr) {
+        for (const effect of tr.effects) {
+            if (effect.is(setErrorLineEffect)) {
+                if (effect.value === null || effect.value < 1 || effect.value > tr.state.doc.lines) {
+                    return Decoration.none;
+                }
+                const line = tr.state.doc.line(effect.value);
+                return Decoration.set([
+                    Decoration.line({ class: 'cm-errorLine' }).range(line.from),
+                ]);
+            }
+        }
+        return decorations.map(tr.changes);
+    },
+    provide: field => EditorView.decorations.from(field),
+});
+
 export class CodeEditor {
     private container: HTMLElement;
-    private textarea: HTMLTextAreaElement;
-    private highlightLayer: HTMLDivElement;
-    private gutterEl: HTMLDivElement;
+    private view: EditorView;
     private onCompile: (() => void) | null = null;
     private onChange: (() => void) | null = null;
-    private _cursorLine = 1;
-    private _cursorCol = 1;
     private onCursorChange: ((line: number, col: number) => void) | null = null;
 
     constructor(container: HTMLElement) {
         this.container = container;
         this.container.classList.add('code-editor-wrapper');
+        this.container.innerHTML = '';
 
-        // Gutter for line numbers
-        this.gutterEl = document.createElement('div');
-        this.gutterEl.className = 'code-editor-gutter';
-        this.container.appendChild(this.gutterEl);
+        const state = EditorState.create({
+            doc: '',
+            extensions: [
+                basicSetup,
+                keymap.of([
+                    {
+                        key: 'Mod-Enter',
+                        run: () => {
+                            this.onCompile?.();
+                            return true;
+                        },
+                    },
+                    indentWithTab,
+                ]),
+                dslLanguage,
+                syntaxHighlighting(dslHighlight),
+                autocompletion({ override: [dslCompletions] }),
+                editorTheme,
+                errorLineField,
+                EditorView.updateListener.of(update => {
+                    if (update.docChanged) {
+                        this.onChange?.();
+                    }
+                    if (update.selectionSet || update.docChanged) {
+                        const head = update.state.selection.main.head;
+                        const line = update.state.doc.lineAt(head);
+                        this.onCursorChange?.(line.number, head - line.from + 1);
+                    }
+                }),
+            ],
+        });
 
-        // Editor area (highlight + textarea stacked)
-        const editorArea = document.createElement('div');
-        editorArea.className = 'code-editor-area';
-
-        this.highlightLayer = document.createElement('div');
-        this.highlightLayer.className = 'code-editor-highlight';
-        this.highlightLayer.setAttribute('aria-hidden', 'true');
-        editorArea.appendChild(this.highlightLayer);
-
-        this.textarea = document.createElement('textarea');
-        this.textarea.className = 'code-editor-input';
-        this.textarea.spellcheck = false;
-        this.textarea.setAttribute('autocomplete', 'off');
-        this.textarea.setAttribute('autocorrect', 'off');
-        this.textarea.setAttribute('autocapitalize', 'off');
-        editorArea.appendChild(this.textarea);
-
-        this.container.appendChild(editorArea);
-
-        this.setupEventListeners();
-        this.updateGutter();
-        this.updateHighlight();
+        this.view = new EditorView({ state, parent: this.container });
     }
 
     get value(): string {
-        return this.textarea.value;
+        return this.view.state.doc.toString();
     }
 
     set value(code: string) {
-        this.textarea.value = code;
-        this.updateGutter();
-        this.updateHighlight();
+        this.view.dispatch({
+            changes: { from: 0, to: this.view.state.doc.length, insert: code },
+        });
     }
 
-    get cursorLine(): number { return this._cursorLine; }
-    get cursorCol(): number { return this._cursorCol; }
+    get cursorLine(): number {
+        const head = this.view.state.selection.main.head;
+        return this.view.state.doc.lineAt(head).number;
+    }
+
+    get cursorCol(): number {
+        const head = this.view.state.selection.main.head;
+        const line = this.view.state.doc.lineAt(head);
+        return head - line.from + 1;
+    }
 
     setOnCompile(fn: () => void): void {
         this.onCompile = fn;
@@ -93,134 +227,43 @@ export class CodeEditor {
     }
 
     focus(): void {
-        this.textarea.focus();
+        this.view.focus();
     }
 
     insertText(text: string): void {
-        const start = this.textarea.selectionStart;
-        const end = this.textarea.selectionEnd;
-        const before = this.textarea.value.substring(0, start);
-        const after = this.textarea.value.substring(end);
-
-        // Add newline before if not at start and previous char isn't newline
-        const needsNewline = before.length > 0 && !before.endsWith('\n');
-        const insertText = (needsNewline ? '\n' : '') + text + '\n';
-
-        this.textarea.value = before + insertText + after;
-        this.textarea.selectionStart = this.textarea.selectionEnd = start + insertText.length;
-        this.textarea.focus();
-        this.updateGutter();
-        this.updateHighlight();
-    }
-
-    private setupEventListeners(): void {
-        this.textarea.addEventListener('input', () => {
-            this.updateGutter();
-            this.updateHighlight();
-            this.onChange?.();
+        const state = this.view.state;
+        const pos = state.selection.main.from;
+        const line = state.doc.lineAt(pos);
+        const before = state.doc.sliceString(line.from, pos);
+        const prefix = before.trim().length > 0 ? '\n' : '';
+        const insert = `${prefix}${text}\n`;
+        this.view.dispatch({
+            changes: { from: pos, insert },
+            selection: { anchor: pos + insert.length },
         });
-
-        this.textarea.addEventListener('scroll', () => {
-            this.highlightLayer.scrollTop = this.textarea.scrollTop;
-            this.highlightLayer.scrollLeft = this.textarea.scrollLeft;
-            this.gutterEl.scrollTop = this.textarea.scrollTop;
-        });
-
-        this.textarea.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-                e.preventDefault();
-                this.onCompile?.();
-            }
-
-            // Tab key inserts 4 spaces
-            if (e.key === 'Tab') {
-                e.preventDefault();
-                const start = this.textarea.selectionStart;
-                const end = this.textarea.selectionEnd;
-                this.textarea.value =
-                    this.textarea.value.substring(0, start) +
-                    '    ' +
-                    this.textarea.value.substring(end);
-                this.textarea.selectionStart = this.textarea.selectionEnd = start + 4;
-                this.updateGutter();
-                this.updateHighlight();
-            }
-        });
-
-        // Track cursor position
-        const updateCursor = () => {
-            const val = this.textarea.value;
-            const pos = this.textarea.selectionStart;
-            const beforeCursor = val.substring(0, pos);
-            const lines = beforeCursor.split('\n');
-            this._cursorLine = lines.length;
-            this._cursorCol = lines[lines.length - 1].length + 1;
-            this.onCursorChange?.(this._cursorLine, this._cursorCol);
-        };
-
-        this.textarea.addEventListener('click', updateCursor);
-        this.textarea.addEventListener('keyup', updateCursor);
-        this.textarea.addEventListener('input', updateCursor);
+        this.view.focus();
     }
 
-    private updateGutter(): void {
-        const lineCount = this.textarea.value.split('\n').length;
-        let html = '';
-        for (let i = 1; i <= lineCount; i++) {
-            html += `<div class="gutter-line">${i}</div>`;
-        }
-        this.gutterEl.innerHTML = html;
+    /** Mark a compile error line and place the cursor on it. */
+    setError(line: number, column: number, message: string): void {
+        const safeLine = Math.max(1, Math.min(line, this.view.state.doc.lines));
+        const lineInfo = this.view.state.doc.line(safeLine);
+        const from = lineInfo.from + Math.max(0, Math.min(column - 1, lineInfo.length));
+        this.view.dispatch(
+            setDiagnostics(this.view.state, [
+                { from, to: Math.min(from + 1, lineInfo.to), severity: 'error', message },
+            ]),
+            { effects: setErrorLineEffect.of(safeLine) },
+            { selection: { anchor: from } },
+            { scrollIntoView: true },
+        );
+        this.view.focus();
     }
 
-    private updateHighlight(): void {
-        const code = this.textarea.value;
-        this.highlightLayer.innerHTML = this.highlightSyntax(code);
-    }
-
-    private highlightSyntax(code: string): string {
-        const lines = code.split('\n');
-        return lines.map(line => {
-            let html = this.escapeHtml(line);
-
-            // Comments
-            const commentIdx = html.indexOf('//');
-            if (commentIdx >= 0) {
-                html = html.substring(0, commentIdx) +
-                    `<span class="hl-comment">${html.substring(commentIdx)}</span>`;
-                return `<div class="hl-line">${html || '&nbsp;'}</div>`;
-            }
-
-            // @keyword tokens
-            html = html.replace(/@(\w+)/g, (_match, word) => {
-                if (DSL_COMPONENT_TYPES.includes(word) || word === 'comp' || word === 'board') {
-                    return `<span class="hl-component">@${word}</span>`;
-                }
-                return `<span class="hl-unknown">@${word}</span>`;
-            });
-
-            // Keywords
-            for (const kw of DSL_KEYWORDS) {
-                const re = new RegExp(`\\b(${kw})\\b`, 'g');
-                html = html.replace(re, `<span class="hl-keyword">$1</span>`);
-            }
-
-            // Numbers
-            html = html.replace(/\b(\d+)\b/g, `<span class="hl-number">$1</span>`);
-
-            // Arrows
-            html = html.replace(/-&gt;/g, `<span class="hl-arrow">-&gt;</span>`);
-
-            // Parentheses
-            html = html.replace(/([()])/g, `<span class="hl-paren">$1</span>`);
-
-            return `<div class="hl-line">${html || '&nbsp;'}</div>`;
-        }).join('');
-    }
-
-    private escapeHtml(str: string): string {
-        return str
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+    clearError(): void {
+        this.view.dispatch(
+            setDiagnostics(this.view.state, []),
+            { effects: setErrorLineEffect.of(null) },
+        );
     }
 }
