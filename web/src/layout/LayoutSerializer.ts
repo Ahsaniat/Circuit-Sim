@@ -10,6 +10,8 @@ import { CircuitIR } from '../types';
  */
 export interface CircuitLayout {
     v: 1;
+    /** Board positions, so a moved board stays moved after a reload. */
+    boards?: Record<string, { x: number; y: number }>;
     components: Record<string, { x: number; y: number; boardId?: string }>;
     wires: Array<{
         from: { x: number; y: number };
@@ -21,6 +23,10 @@ export interface CircuitLayout {
 export const LAYOUT_PREFIX = '//!layout:';
 
 export function serializeLayout(ir: CircuitIR): CircuitLayout {
+    const boards: NonNullable<CircuitLayout['boards']> = {};
+    for (const board of ir.boards) {
+        boards[board.id] = { x: board.position.x, y: board.position.y };
+    }
     const components: CircuitLayout['components'] = {};
     for (const comp of ir.components) {
         components[comp.id] = {
@@ -36,7 +42,7 @@ export function serializeLayout(ir: CircuitIR): CircuitLayout {
             ? { waypoints: wire.waypoints.map(wp => ({ x: wp.x, y: wp.y })) }
             : {}),
     }));
-    return { v: 1, components, wires };
+    return { v: 1, boards, components, wires };
 }
 
 export function layoutToLine(layout: CircuitLayout): string {
@@ -70,6 +76,14 @@ export function extractLayout(code: string): { code: string; layout: CircuitLayo
  * skipped so a stale layout can never corrupt a circuit.
  */
 export function applyLayout(ir: CircuitIR, layout: CircuitLayout): void {
+    if (layout.boards) {
+        for (const board of ir.boards) {
+            const saved = layout.boards[board.id];
+            if (saved) {
+                board.position = { x: saved.x, y: saved.y };
+            }
+        }
+    }
     for (const comp of ir.components) {
         const saved = layout.components[comp.id];
         if (!saved) continue;

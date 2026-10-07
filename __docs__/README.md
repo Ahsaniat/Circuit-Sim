@@ -20,6 +20,8 @@ intentionally not tracked.
 | File | Shows |
 | :--- | :--- |
 | [screenshots/hero-simulation.png](screenshots/hero-simulation.png) | Battery + LED simulation with live wire states (hero image) |
+| [screenshots/two-boards-simulation.png](screenshots/two-boards-simulation.png) | Two breadboards with cross-board jumpers, both LEDs lit |
+| [screenshots/moved-board-wires-follow.png](screenshots/moved-board-wires-follow.png) | A moved board with its components and jumper endpoints following |
 | [screenshots/simulation-led.png](screenshots/simulation-led.png) | Simulation overlay on a battery + LED circuit |
 | [screenshots/erc-diagnostics.png](screenshots/erc-diagnostics.png) | ERC problems under the editor and in the status bar |
 | [screenshots/net-highlight.png](screenshots/net-highlight.png) | Net highlighting on wire hover |

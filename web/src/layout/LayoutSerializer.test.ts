@@ -25,6 +25,27 @@ describe('LayoutSerializer', () => {
         expect(fresh.wires[0].waypoints).toEqual([{ x: 1, y: 2 }, { x: 3, y: 4 }]);
     });
 
+    it('round-trips board positions', () => {
+        const ir = compile(SOURCE);
+        ir.boards[0].position = { x: 120, y: 45 };
+        const layout = serializeLayout(ir);
+
+        const fresh = compile(SOURCE);
+        applyLayout(fresh, layout);
+        expect(fresh.boards[0].position).toEqual({ x: 120, y: 45 });
+    });
+
+    it('applies layouts saved before board positions existed', () => {
+        const ir = compile(SOURCE);
+        const layout = serializeLayout(ir);
+        delete layout.boards;
+
+        const fresh = compile(SOURCE);
+        const before = { ...fresh.boards[0].position };
+        applyLayout(fresh, layout);
+        expect(fresh.boards[0].position).toEqual(before);
+    });
+
     it('serializes to a single comment line and extracts cleanly', () => {
         const ir = compile(SOURCE);
         const line = layoutToLine(serializeLayout(ir));
