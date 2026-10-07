@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="CircuitSim — a code-to-circuit simulator. Describe circuits in a small DSL and see them placed on a breadboard, then simulate and export them.">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <title>CircuitSim — Code-to-Circuit Simulator</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         /* ============================================
            THEME — CSS Custom Properties (defaults for dark)
@@ -115,7 +114,7 @@
         }
         html, body { height: 100%; overflow: hidden; }
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             font-size: 13px;
             background: var(--bg-primary);
             color: var(--text-primary);
@@ -801,6 +800,11 @@
     </style>
 </head>
 <body>
+    <noscript>
+        <div style="padding:16px;font-family:sans-serif">
+            CircuitSim is a client-side simulator and requires JavaScript to run.
+        </div>
+    </noscript>
     <div id="app">
         <!-- TOOLBAR -->
         <div class="toolbar" id="toolbar">
