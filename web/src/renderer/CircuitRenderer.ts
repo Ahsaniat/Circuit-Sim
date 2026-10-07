@@ -4,6 +4,7 @@ import { getComponentFootprint, getICPinCounts } from '../geometry/ComponentFoot
 import { SnapManager } from '../geometry/SnapManager';
 import { CircuitHistory } from '../history/CircuitHistory';
 import { buildSvg } from '../export/SvgExporter';
+import { translateBoardElements } from './boardMove';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
 import { componentSummary } from '../components/PinDatabase';
@@ -494,33 +495,15 @@ export class CircuitRenderer {
                 if (!dragged) return;
                 
                 if (dragged.type === 'board') {
-                    // Move this board and only the components/wires that belong to it
+                    // Move this board and its elements; cross-board wire
+                    // endpoints follow whichever board they belong to.
                     const board = this.circuitIR.boards.find(b => b.id === this.selectedId);
                     if (board) {
                         const dx = newBaseX - board.position.x;
                         const dy = newBaseY - board.position.y;
                         
                         board.position = { x: newBaseX, y: newBaseY };
-                        
-                        for (const comp of this.circuitIR.components) {
-                            if (this.boardIdOf(comp.boardId) !== board.id) continue;
-                            comp.position.x += dx;
-                            comp.position.y += dy;
-                        }
-                        
-                        for (const wire of this.circuitIR.wires) {
-                            if (this.boardIdOf(wire.boardId) !== board.id) continue;
-                            wire.from.x += dx;
-                            wire.from.y += dy;
-                            wire.to.x += dx;
-                            wire.to.y += dy;
-                            if (wire.waypoints) {
-                                for (const wp of wire.waypoints) {
-                                    wp.x += dx;
-                                    wp.y += dy;
-                                }
-                            }
-                        }
+                        translateBoardElements(this.circuitIR, board.id, dx, dy);
                         
                         // Update geometry and snap manager
                         const geo = this.boardGeometries.get(board.id);
