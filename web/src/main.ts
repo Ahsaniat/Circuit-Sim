@@ -131,6 +131,18 @@ class App {
         const _rightPanel = document.getElementById('canvas-panel')!;
         new SplitPane(mainArea, leftPanel, _rightPanel);
 
+        // Drop components from the library onto the canvas
+        const canvasPanelEl = document.getElementById('canvas-panel')!;
+        canvasPanelEl.addEventListener('dragover', (e) => e.preventDefault());
+        canvasPanelEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const code = e.dataTransfer?.getData('text/plain');
+            if (!code) return;
+            this.codeEditor.insertText(code);
+            this.compile();
+            this.toast.success('Component inserted');
+        });
+
         // Canvas edits affect history + autosave
         this.renderer.setOnHistoryChange(() => {
             this.syncHistoryButtons();

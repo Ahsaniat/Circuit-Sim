@@ -1,5 +1,6 @@
 /**
- * ComponentLibrary — Categorized component palette with click-to-insert
+ * ComponentLibrary — Categorized component palette with search, working
+ * collapse-all, click-to-insert and drag-to-canvas.
  */
 
 interface ComponentEntry {
@@ -137,10 +138,31 @@ const COMPONENT_CATEGORIES: ComponentCategory[] = [
     },
 ];
 
+/**
+ * Pure filter used by the palette search. Matches against label,
+ * description, keyword and example, case-insensitively.
+ */
+export function filterCategories(categories: ComponentCategory[], query: string): ComponentCategory[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return categories;
+    return categories
+        .map(category => ({
+            ...category,
+            entries: category.entries.filter(entry =>
+                entry.label.toLowerCase().includes(q) ||
+                entry.description.toLowerCase().includes(q) ||
+                entry.keyword.toLowerCase().includes(q) ||
+                entry.example.toLowerCase().includes(q)
+            ),
+        }))
+        .filter(category => category.entries.length > 0);
+}
+
 export class ComponentLibrary {
     private container: HTMLElement;
     private onInsert: ((code: string) => void) | null = null;
     private expandedCategories: Set<string> = new Set();
+    private query = '';
 
     constructor(container: HTMLElement) {
         this.container = container;
@@ -157,30 +179,71 @@ export class ComponentLibrary {
 
         const header = document.createElement('div');
         header.className = 'comp-lib-header';
-        header.innerHTML = `
-            <span class="comp-lib-title">Components</span>
-            <button class="comp-lib-toggle" title="Collapse all">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M12.78 6.22a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06 0L3.22 7.28a.75.75 0 011.06-1.06L8 9.94l3.72-3.72a.75.75 0 011.06 0z"/></svg>
-            </button>
-        `;
+
+        const title = document.createElement('span');
+        title.className = 'comp-lib-title';
+        title.textContent = 'Components';
+        header.appendChild(title);
+
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.className = 'comp-lib-search';
+        search.placeholder = 'Search…';
+        search.setAttribute('aria-label', 'Search components');
+        search.value = this.query;
+        search.addEventListener('input', () => {
+            this.query = search.value;
+            this.renderList(list);
+        });
+        header.appendChild(search);
+
+        const toggle = document.createElement('button');
+        toggle.className = 'comp-lib-toggle';
+        const allExpanded = COMPONENT_CATEGORIES.every(c => this.expandedCategories.has(c.name));
+        toggle.title = allExpanded ? 'Collapse all' : 'Expand all';
+        toggle.setAttribute('aria-label', toggle.title);
+        toggle.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M12.78 6.22a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06 0L3.22 7.28a.75.75 0 011.06-1.06L8 9.94l3.72-3.72a.75.75 0 011.06 0z"/></svg>';
+        toggle.addEventListener('click', () => {
+            if (allExpanded) {
+                this.expandedCategories.clear();
+            } else {
+                for (const category of COMPONENT_CATEGORIES) {
+                    this.expandedCategories.add(category.name);
+                }
+            }
+            this.render();
+        });
+        header.appendChild(toggle);
+
         this.container.appendChild(header);
 
         const list = document.createElement('div');
         list.className = 'comp-lib-list';
-
-        for (const category of COMPONENT_CATEGORIES) {
-            const catEl = this.createCategory(category);
-            list.appendChild(catEl);
-        }
-
         this.container.appendChild(list);
+        this.renderList(list);
     }
 
-    private createCategory(category: ComponentCategory): HTMLElement {
+    private renderList(list: HTMLElement): void {
+        list.innerHTML = '';
+        const categories = filterCategories(COMPONENT_CATEGORIES, this.query);
+        if (categories.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'comp-lib-empty';
+            empty.textContent = `No components match "${this.query}"`;
+            list.appendChild(empty);
+            return;
+        }
+        const searching = this.query.trim().length > 0;
+        for (const category of categories) {
+            list.appendChild(this.createCategory(category, searching));
+        }
+    }
+
+    private createCategory(category: ComponentCategory, forceExpanded: boolean): HTMLElement {
         const el = document.createElement('div');
         el.className = 'comp-lib-category';
 
-        const isExpanded = this.expandedCategories.has(category.name);
+        const isExpanded = forceExpanded || this.expandedCategories.has(category.name);
 
         const headerBtn = document.createElement('button');
         headerBtn.className = `comp-lib-cat-header${isExpanded ? ' expanded' : ''}`;
@@ -203,16 +266,22 @@ export class ComponentLibrary {
                 <span class="comp-lib-item-label">${entry.label}</span>
                 <span class="comp-lib-item-desc">${entry.description}</span>
             `;
-            item.title = `Click to insert: ${entry.example}`;
+            item.title = `Click or drag to insert: ${entry.example}`;
+            item.draggable = true;
             item.addEventListener('click', () => {
                 this.onInsert?.(entry.example);
+            });
+            item.addEventListener('dragstart', (e) => {
+                e.dataTransfer?.setData('text/plain', entry.example);
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'copy';
+                }
             });
             items.appendChild(item);
         }
 
         headerBtn.addEventListener('click', () => {
-            const wasExpanded = items.classList.contains('expanded');
-            if (wasExpanded) {
+            if (this.expandedCategories.has(category.name)) {
                 this.expandedCategories.delete(category.name);
             } else {
                 this.expandedCategories.add(category.name);
