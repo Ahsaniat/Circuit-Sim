@@ -187,6 +187,45 @@ export function filterCategories(categories: ComponentCategory[], query: string)
         .filter(category => category.entries.length > 0);
 }
 
+/**
+ * Collect every declared identifier in the DSL source: component/board
+ * instance ids and custom IC names.
+ */
+export function collectUsedIds(code: string): Set<string> {
+    const ids = new Set<string>();
+    const declaration = /^\s*@\w+\s+([A-Za-z_]\w*)/gm;
+    const icDef = /^\s*def\s+([A-Za-z_]\w*)/gm;
+    for (const match of code.matchAll(declaration)) {
+        ids.add(match[1]);
+    }
+    for (const match of code.matchAll(icDef)) {
+        ids.add(match[1]);
+    }
+    return ids;
+}
+
+/**
+ * Rename the instance id in an example declaration if it is already used,
+ * so inserting from the palette never creates a duplicate declaration.
+ * `@board B1 breadboard_830` becomes `@board B2 breadboard_830`.
+ */
+export function makeUniqueId(example: string, usedIds: Set<string>): string {
+    const match = example.match(/^(@\w+\s+)([A-Za-z_]\w*)(.*)$/);
+    if (!match) return example;
+    const [, prefix, id, rest] = match;
+    if (!usedIds.has(id)) return example;
+
+    const numbered = id.match(/^(.*?)(\d+)$/);
+    const base = numbered ? numbered[1] : id;
+    let counter = numbered ? parseInt(numbered[2], 10) : 1;
+    let candidate: string;
+    do {
+        counter += 1;
+        candidate = `${base}${counter}`;
+    } while (usedIds.has(candidate));
+    return `${prefix}${candidate}${rest}`;
+}
+
 export class ComponentLibrary {
     private container: HTMLElement;
     private onInsert: ((code: string) => void) | null = null;

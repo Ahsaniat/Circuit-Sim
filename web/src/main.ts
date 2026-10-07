@@ -4,7 +4,7 @@ import { CircuitIR } from './types';
 import { Theme } from './ui/Theme';
 import { Toast } from './ui/Toast';
 import { CodeEditor } from './ui/CodeEditor';
-import { ComponentLibrary } from './ui/ComponentLibrary';
+import { ComponentLibrary, collectUsedIds, makeUniqueId } from './ui/ComponentLibrary';
 import { StatusBar } from './ui/StatusBar';
 import { ZoomControls } from './ui/ZoomControls';
 import { Templates } from './ui/Templates';
@@ -97,10 +97,7 @@ class App {
         // Component library sidebar
         const libContainer = document.getElementById('component-library')!;
         const componentLib = new ComponentLibrary(libContainer);
-        componentLib.setOnInsert((code) => {
-            this.codeEditor.insertText(code);
-            this.toast.info(`Inserted: ${code}`);
-        });
+        componentLib.setOnInsert((code) => this.insertComponentExample(code));
 
         // Status bar
         this.statusBar = new StatusBar(document.getElementById('status-bar')!);
@@ -156,7 +153,7 @@ class App {
             e.preventDefault();
             const code = e.dataTransfer?.getData('text/plain');
             if (!code) return;
-            this.codeEditor.insertText(code);
+            this.insertComponentExample(code);
             this.compile();
             this.toast.success('Component inserted');
         });
@@ -321,6 +318,17 @@ class App {
         this.syncHistoryButtons();
         this.scheduleAutosave();
         this.toast.info('Editor cleared');
+    }
+
+    /**
+     * Insert a palette example, renaming its instance id when that id is
+     * already declared so insertion never creates a duplicate.
+     */
+    private insertComponentExample(example: string): void {
+        const used = collectUsedIds(this.codeEditor.value);
+        const code = makeUniqueId(example, used);
+        this.codeEditor.insertText(code);
+        this.toast.info(`Inserted: ${code}`);
     }
 
     private toggleSimulation(): void {
