@@ -23,6 +23,7 @@ import { extractNetlist, Netlist } from './simulation/Netlist';
 import { simulate } from './simulation/Simulator';
 import { runErc } from './erc/Erc';
 import { DiagnosticsPanel } from './ui/DiagnosticsPanel';
+import { buildBomCsv } from './export/Bom';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
 @AND A1 7408
@@ -185,6 +186,7 @@ class App {
         document.getElementById('load-btn')?.addEventListener('click', () => this.fileManager.openFile());
         document.getElementById('export-btn')?.addEventListener('click', () => this.exportPNG());
         document.getElementById('svg-btn')?.addEventListener('click', () => this.exportSVG());
+        document.getElementById('bom-btn')?.addEventListener('click', () => this.exportBom());
         document.getElementById('shortcuts-btn')?.addEventListener('click', () => this.shortcuts.toggle());
         document.getElementById('undo-btn')?.addEventListener('click', () => {
             this.renderer.undo();
@@ -402,6 +404,17 @@ class App {
         } catch (err) {
             this.toast.error(`Export error: ${err}`);
         }
+    }
+
+    private exportBom(): void {
+        const ir = this.renderer.getIR();
+        if (!ir || ir.components.length === 0) {
+            this.toast.warning('Nothing to export');
+            return;
+        }
+        const filename = `bom-${this.timestamp()}.csv`;
+        this.downloadBlob(new Blob([buildBomCsv(ir)], { type: 'text/csv' }), filename);
+        this.toast.success(`Exported: ${filename}`);
     }
 
     private downloadBlob(blob: Blob, filename: string): void {
