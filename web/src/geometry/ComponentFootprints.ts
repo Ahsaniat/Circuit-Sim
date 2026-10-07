@@ -48,12 +48,23 @@ export interface ComponentFootprint {
  * - Bottom pins (1 to N/2) in row F, left to right
  * - Top pins (N to N/2+1) in row E, left to right (numbered right to left)
  */
+/**
+ * Pin distribution for DIP-style ICs. DIP packages are even, but custom
+ * `def` ICs may declare an odd pin count, so the extra pin goes on the
+ * bottom row and the top row is right-aligned.
+ */
+export function getICPinCounts(pinCount: number): { bottom: number; top: number; topOffset: number } {
+    const bottom = Math.ceil(pinCount / 2);
+    const top = pinCount - bottom;
+    return { bottom, top, topOffset: bottom - top };
+}
+
 export function getICFootprint(pinCount: number): ComponentFootprint {
-    const pinsPerSide = Math.floor(pinCount / 2);
+    const { bottom, top, topOffset } = getICPinCounts(pinCount);
     const holeSpacing = BreadboardGeometry.HOLE_SPACING;
     
     // Body width spans the pins plus margins
-    const bodyWidth = (pinsPerSide - 1) * holeSpacing + 2;
+    const bodyWidth = (bottom - 1) * holeSpacing + 2;
     
     // Body height: fits between E and F rows with pins extending to reach holes
     const pinLength = 1.5;
@@ -63,8 +74,8 @@ export function getICFootprint(pinCount: number): ComponentFootprint {
     const pins: PinFootprint[] = [];
     const firstPinOffsetX = 1; // First pin is 1 unit from body left edge
     
-    // Bottom pins: 1, 2, 3, ..., N/2 (left to right, in row F)
-    for (let i = 0; i < pinsPerSide; i++) {
+    // Bottom pins: 1, 2, 3, ..., ceil(N/2) (left to right, in row F)
+    for (let i = 0; i < bottom; i++) {
         pins.push({
             number: i + 1,
             offsetX: firstPinOffsetX + i * holeSpacing,
@@ -74,12 +85,13 @@ export function getICFootprint(pinCount: number): ComponentFootprint {
         });
     }
     
-    // Top pins: N, N-1, N-2, ..., N/2+1 (numbered right to left, physically left to right in row E)
-    for (let i = 0; i < pinsPerSide; i++) {
+    // Top pins: N, N-1, ... (numbered right to left, physically left to
+    // right in row E); the row is right-aligned for odd pin counts.
+    for (let i = 0; i < top; i++) {
         const pinNumber = pinCount - i;
         pins.push({
             number: pinNumber,
-            offsetX: firstPinOffsetX + i * holeSpacing,
+            offsetX: firstPinOffsetX + (topOffset + i) * holeSpacing,
             offsetY: -pinLength,  // Above body
             targetRow: 'E',
             label: `${pinNumber}`

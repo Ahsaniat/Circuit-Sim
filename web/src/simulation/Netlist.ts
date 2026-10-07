@@ -1,6 +1,6 @@
 import { CircuitIR, ComponentIR } from '../types';
 import { BreadboardGeometry, HolePosition } from '../geometry/BreadboardGeometry';
-import { getComponentFootprint } from '../geometry/ComponentFootprints';
+import { getComponentFootprint, getICPinCounts } from '../geometry/ComponentFootprints';
 
 /**
  * Netlist extraction: converts physical breadboard placement into electrical
@@ -76,16 +76,18 @@ export function pinHole(
     const footprint = getComponentFootprint(comp.category ?? 'ic', comp.pinCount, comp.type);
 
     if (footprint.straddlesChannel) {
-        const pinsPerSide = comp.pinCount / 2;
+        const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
         const startCol = geo.getICStartColumn(comp.position.x);
-        for (let i = 0; i < pinsPerSide; i++) {
-            // Bottom pins: 1..N/2 in row F
+        for (let i = 0; i < bottom; i++) {
+            // Bottom pins: 1..ceil(N/2) in row F
             if (pinNumber === i + 1) {
                 return geo.getHolePosition(startCol + i, 'F');
             }
-            // Top pins: N..N/2+1 in row E
+        }
+        for (let i = 0; i < top; i++) {
+            // Top pins: N..ceil(N/2)+1 in row E (right-aligned for odd counts)
             if (pinNumber === comp.pinCount - i) {
-                return geo.getHolePosition(startCol + i, 'E');
+                return geo.getHolePosition(startCol + topOffset + i, 'E');
             }
         }
         return null;
@@ -157,16 +159,33 @@ export function extractNetlist(
         }
     }
 
-    // Wires tie their endpoints to the holes they touch.
+    // Wires tie their endpoints to the holes they touch. Each endpoint is
+    // resolved against the board that owns the referenced component, so a
+    // jumper between two boards connects the correct holes on each side.
+    const componentById = new Map(ir.components.map(comp => [comp.id, comp]));
+    const boardIdForSymbol = (id: string): string | undefined => {
+        const comp = componentById.get(id);
+        if (comp) return comp.boardId ?? defaultBoardId;
+        if (ir.boards.some(board => board.id === id)) return id;
+        return defaultBoardId;
+    };
+    const endpointNodes: Array<{ from: string; to: string; fromHole?: string; toHole?: string }> = [];
+
     ir.wires.forEach((wire, index) => {
-        const boardId = wire.boardId ?? defaultBoardId;
-        const geo = boardId ? geometries.get(boardId) : undefined;
-        const fromNode = geo && wireEndpointHole(wire.from, geo)
-            ? holeKey(boardId!, wireEndpointHole(wire.from, geo)!)
-            : `wire:${index}:from`;
-        const toNode = geo && wireEndpointHole(wire.to, geo)
-            ? holeKey(boardId!, wireEndpointHole(wire.to, geo)!)
-            : `wire:${index}:to`;
+        const fromBoard = boardIdForSymbol(wire.from.component);
+        const toBoard = boardIdForSymbol(wire.to.component);
+        const fromGeo = fromBoard ? geometries.get(fromBoard) : undefined;
+        const toGeo = toBoard ? geometries.get(toBoard) : undefined;
+        const fromHole = fromGeo ? wireEndpointHole(wire.from, fromGeo) : null;
+        const toHole = toGeo ? wireEndpointHole(wire.to, toGeo) : null;
+        const fromNode = fromHole && fromBoard ? holeKey(fromBoard, fromHole) : `wire:${index}:from`;
+        const toNode = toHole && toBoard ? holeKey(toBoard, toHole) : `wire:${index}:to`;
+        endpointNodes.push({
+            from: fromNode,
+            to: toNode,
+            fromHole: fromHole && fromBoard ? holeKey(fromBoard, fromHole) : undefined,
+            toHole: toHole && toBoard ? holeKey(toBoard, toHole) : undefined,
+        });
         uf.union(fromNode, toNode);
     });
 
@@ -236,7 +255,15 @@ export function extractNetlist(
         }
     }
 
-    const wireNet = ir.wires.map((_wire, index) => netFor(`wire:${index}:from`).id);
+    // Record wire endpoint holes on their nets as well.
+    ir.wires.forEach((_wire, index) => {
+        const net = netFor(endpointNodes[index].from);
+        const nodes = endpointNodes[index];
+        if (nodes.fromHole) net.holes.push(nodes.fromHole);
+        if (nodes.toHole) net.holes.push(nodes.toHole);
+    });
+
+    const wireNet = ir.wires.map((_wire, index) => netFor(endpointNodes[index].from).id);
 
     const pinNet = new Map<string, number>();
     for (const comp of ir.components) {

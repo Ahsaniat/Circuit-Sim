@@ -1,6 +1,6 @@
 import { CircuitIR, ComponentIR, BoardIR, Wire, Position } from '../types';
 import { BreadboardGeometry, HolePosition } from '../geometry/BreadboardGeometry';
-import { getComponentFootprint } from '../geometry/ComponentFootprints';
+import { getComponentFootprint, getICPinCounts } from '../geometry/ComponentFootprints';
 import { SnapManager } from '../geometry/SnapManager';
 import { CircuitHistory } from '../history/CircuitHistory';
 import { buildSvg } from '../export/SvgExporter';
@@ -576,11 +576,11 @@ export class CircuitRenderer {
                         
                         if (footprint.straddlesChannel) {
                             // IC component - snap using IC-specific method
-                            const pinsPerSide = comp.pinCount / 2;
+                            const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
                             const firstPinOffsetX = 1;
                             const snapResult = snapMgr.snapICComponent(
                                 { x: newBaseX, y: newBaseY },
-                                pinsPerSide,
+                                bottom,
                                 firstPinOffsetX,
                                 IC_PIN_LENGTH,
                                 this.screenToBase(SNAP_RADIUS_PX)
@@ -593,9 +593,11 @@ export class CircuitRenderer {
                             // Show snap preview for all IC pins
                             if (snapResult.snapped && snapResult.snapCol) {
                                 this.snapPreviewHoles = [];
-                                for (let i = 0; i < pinsPerSide; i++) {
-                                    this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + i, 'E'));
+                                for (let i = 0; i < bottom; i++) {
                                     this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + i, 'F'));
+                                }
+                                for (let i = 0; i < top; i++) {
+                                    this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + topOffset + i, 'E'));
                                 }
                             } else {
                                 this.snapPreviewHoles = [];
@@ -1042,14 +1044,16 @@ export class CircuitRenderer {
                 
                 if (footprint.straddlesChannel) {
                     // IC pins in rows E and F
-                    const pinsPerSide = comp.pinCount / 2;
+                    const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
                     const startCol = geo.getICStartColumn(comp.position.x);
                     
-                    for (let i = 0; i < pinsPerSide; i++) {
+                    for (let i = 0; i < bottom; i++) {
                         // Bottom pins (row F)
                         snapMgr.registerPinOccupancy(startCol + i, 'F', comp.id, i + 1);
-                        // Top pins (row E)
-                        snapMgr.registerPinOccupancy(startCol + i, 'E', comp.id, comp.pinCount - i);
+                    }
+                    for (let i = 0; i < top; i++) {
+                        // Top pins (row E), right-aligned for odd pin counts
+                        snapMgr.registerPinOccupancy(startCol + topOffset + i, 'E', comp.id, comp.pinCount - i);
                     }
                 } else {
                     // Non-IC components - calculate pin columns from position
@@ -1194,9 +1198,9 @@ export class CircuitRenderer {
      * IC body height = calculated so pins reach rows E and F
      */
     private getICDimensions(pinCount: number): { width: number; height: number; pinLength: number } {
-        const pinsPerSide = pinCount / 2;
-        // Width: pins span (pinsPerSide-1) * HOLE_SPACING, plus 2 units for body margins
-        const width = (pinsPerSide - 1) * BreadboardGeometry.HOLE_SPACING + 2;
+        const { bottom } = getICPinCounts(pinCount);
+        // Width: pins span (bottom-1) * HOLE_SPACING, plus 2 units for body margins
+        const width = (bottom - 1) * BreadboardGeometry.HOLE_SPACING + 2;
         // Height: body spans the channel between row E and F
         const height = IC_BODY_HEIGHT;
         return { width, height, pinLength: IC_PIN_LENGTH };
@@ -1514,7 +1518,7 @@ export class CircuitRenderer {
         const S = BASE_SCALE;
         const x = comp.position.x * S;
         const y = comp.position.y * S;
-        const pinsPerSide = comp.pinCount / 2;
+        const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
         const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
         
         const { width, height, pinLength } = this.getICDimensions(comp.pinCount);
@@ -1555,19 +1559,23 @@ export class CircuitRenderer {
         this.ctx.fill();
 
         // Pins - Standard IC numbering: 
-        // Bottom: pins 1 to N/2 (left to right)
-        // Top: pins N to N/2+1 (left to right, so numbers decrease)
+        // Bottom: pins 1 to ceil(N/2) (left to right)
+        // Top: pins N to ceil(N/2)+1 (left to right, so numbers decrease;
+        // right-aligned when the count is odd)
         this.ctx.fillStyle = this.palette.pin;
-        for (let i = 0; i < pinsPerSide; i++) {
+        for (let i = 0; i < bottom; i++) {
             const px = x + firstPinOffset + i * holeSpacing;
             
-            // Bottom pins (1, 2, 3, ... N/2) - inserted into row F
+            // Bottom pins (1, 2, 3, ...) - inserted into row F
             this.ctx.fillRect(px - 1.5, y + icHeight, 3, pinLengthPx);
             this.ctx.beginPath();
             this.ctx.arc(px, y + icHeight + pinLengthPx, 2, 0, Math.PI * 2);
             this.ctx.fill();
+        }
+        for (let i = 0; i < top; i++) {
+            const px = x + firstPinOffset + (topOffset + i) * holeSpacing;
             
-            // Top pins (N, N-1, N-2, ... N/2+1) - inserted into row E
+            // Top pins (N, N-1, ...) - inserted into row E
             this.ctx.fillRect(px - 1.5, y - pinLengthPx, 3, pinLengthPx);
             this.ctx.beginPath();
             this.ctx.arc(px, y - pinLengthPx, 2, 0, Math.PI * 2);
@@ -2204,7 +2212,7 @@ export class CircuitRenderer {
         const S = BASE_SCALE;
         const x = comp.position.x * S;
         const y = comp.position.y * S;
-        const pinsPerSide = comp.pinCount / 2;
+        const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
         const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
         const { width, height, pinLength } = this.getICDimensions(comp.pinCount);
         const w = width * S;
@@ -2255,13 +2263,15 @@ export class CircuitRenderer {
         this.ctx.strokeStyle = this.palette.pin;
         this.ctx.lineWidth = 2 / this.zoom;
         this.ctx.fillStyle = this.palette.pin;
-        for (let i = 0; i < pinsPerSide; i++) {
+        for (let i = 0; i < bottom; i++) {
             const px = x + firstPinOffset + i * holeSpacing;
             this.ctx.fillRect(px - 1.5, y + h, 3, pinLengthPx);
             this.ctx.beginPath();
             this.ctx.arc(px, y + h + pinLengthPx, 2, 0, Math.PI * 2);
             this.ctx.fill();
-            
+        }
+        for (let i = 0; i < top; i++) {
+            const px = x + firstPinOffset + (topOffset + i) * holeSpacing;
             this.ctx.fillRect(px - 1.5, y - pinLengthPx, 3, pinLengthPx);
             this.ctx.beginPath();
             this.ctx.arc(px, y - pinLengthPx, 2, 0, Math.PI * 2);

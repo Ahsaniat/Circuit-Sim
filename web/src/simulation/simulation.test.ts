@@ -122,6 +122,42 @@ describe('simulation: indicators', () => {
     });
 });
 
+describe('simulation: cross-board jumpers', () => {
+    it('joins nets across two boards with a component-to-component jumper', () => {
+        const { ir, geometries } = buildIr(
+            `@board B1 breadboard_830\n@board B2 breadboard_830\n` +
+            `@resistor R1 330\n@resistor R2 330\n` +
+            `B1.map (\n (R1 pin 1 -> B1 pin 5)\n)\n` +
+            `B2.map (\n (R2 pin 1 -> B2 pin 5)\n)\n` +
+            `map (\n (R1 pin 2 -> R2 pin 2)\n)\n`
+        );
+        const netlist = extractNetlist(ir, geometries);
+        expect(netlist.pinNet.get('R1:2')).toBe(netlist.pinNet.get('R2:2'));
+    });
+
+    it('connects a component directly to another board pin', () => {
+        const { ir, geometries } = buildIr(
+            `@board B1 breadboard_830\n@board B2 breadboard_830\n` +
+            `@resistor R1 330\n` +
+            `B1.map (\n (R1 pin 1 -> B2 pin 5)\n)\n`
+        );
+        const netlist = extractNetlist(ir, geometries);
+        const net = netlist.nets[netlist.pinNet.get('R1:1')!];
+        expect(net.holes).toContain('B2:5:D');
+    });
+
+    it('keeps boards electrically separate without a jumper', () => {
+        const { ir, geometries } = buildIr(
+            `@board B1 breadboard_830\n@board B2 breadboard_830\n` +
+            `@resistor R1 330\n@resistor R2 330\n` +
+            `B1.map (\n (R1 pin 1 -> B1 pin 5)\n)\n` +
+            `B2.map (\n (R2 pin 1 -> B2 pin 5)\n)\n`
+        );
+        const netlist = extractNetlist(ir, geometries);
+        expect(netlist.pinNet.get('R1:1')).not.toBe(netlist.pinNet.get('R2:1'));
+    });
+});
+
 describe('simulation: power sources', () => {
     it('drives nets from a battery', () => {
         const { ir, geometries } = buildIr(

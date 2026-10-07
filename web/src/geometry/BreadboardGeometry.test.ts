@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BreadboardGeometry } from './BreadboardGeometry';
+import { getICFootprint, getICPinCounts } from './ComponentFootprints';
 
 const geo = new BreadboardGeometry(0, 0);
 const BOARD_HEIGHT = BreadboardGeometry.BOARD_HEIGHT;
@@ -84,5 +85,32 @@ describe('IC body placement', () => {
         expect(body.y - pinLength).toBeCloseTo(rowE.y, 5);
         // Bottom pin tip: bodyY + bodyHeight + pinLength should equal row F
         expect(body.y + bodyHeight + pinLength).toBeCloseTo(rowF.y, 5);
+    });
+});
+
+describe('IC pin counts', () => {
+    it('splits even counts evenly', () => {
+        expect(getICPinCounts(14)).toEqual({ bottom: 7, top: 7, topOffset: 0 });
+    });
+
+    it('puts the extra pin on the bottom row for odd counts', () => {
+        expect(getICPinCounts(3)).toEqual({ bottom: 2, top: 1, topOffset: 1 });
+        expect(getICPinCounts(5)).toEqual({ bottom: 3, top: 2, topOffset: 1 });
+    });
+
+    it('generates every pin exactly once, including odd counts', () => {
+        for (const pinCount of [2, 3, 4, 5, 8, 10, 14, 16]) {
+            const footprint = getICFootprint(pinCount);
+            const numbers = footprint.pins.map(p => p.number).sort((a, b) => a - b);
+            expect(numbers).toEqual(Array.from({ length: pinCount }, (_, i) => i + 1));
+        }
+    });
+
+    it('right-aligns the top row for odd pin counts', () => {
+        const footprint = getICFootprint(3);
+        const topPin = footprint.pins.find(p => p.number === 3)!;
+        const bottomPin2 = footprint.pins.find(p => p.number === 2)!;
+        expect(topPin.targetRow).toBe('E');
+        expect(topPin.offsetX).toBe(bottomPin2.offsetX);
     });
 });
