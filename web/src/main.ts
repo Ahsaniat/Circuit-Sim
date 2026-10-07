@@ -25,6 +25,7 @@ import { runErc } from './erc/Erc';
 import { DiagnosticsPanel } from './ui/DiagnosticsPanel';
 import { buildBomCsv } from './export/Bom';
 import { registerCustomIC } from './components/PinDatabase';
+import { buildShareUrl, readShareHash } from './share/Permalink';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
 @AND A1 7408
@@ -83,9 +84,13 @@ class App {
         // Code editor with syntax highlighting
         const editorContainer = document.getElementById('code-editor-container')!;
         this.codeEditor = new CodeEditor(editorContainer);
-        const session = this.readSession();
-        this.codeEditor.value = session?.code ?? DEFAULT_CODE;
-        this.pendingLayout = session?.layout ?? null;
+        const sharedCode = readShareHash(window.location.hash);
+        const session = sharedCode ? null : this.readSession();
+        this.codeEditor.value = sharedCode ?? session?.code ?? DEFAULT_CODE;
+        this.pendingLayout = sharedCode ? null : session?.layout ?? null;
+        if (sharedCode) {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
         this.codeEditor.setOnCompile(() => this.compile());
         this.codeEditor.setOnChange(() => this.scheduleAutosave());
 
@@ -173,7 +178,9 @@ class App {
         this.compile();
         this.syncHistoryButtons();
 
-        if (session) {
+        if (sharedCode) {
+            this.toast.success('Shared circuit loaded');
+        } else if (session) {
             this.toast.info('Session restored');
         }
     }
@@ -188,6 +195,7 @@ class App {
         document.getElementById('export-btn')?.addEventListener('click', () => this.exportPNG());
         document.getElementById('svg-btn')?.addEventListener('click', () => this.exportSVG());
         document.getElementById('bom-btn')?.addEventListener('click', () => this.exportBom());
+        document.getElementById('share-btn')?.addEventListener('click', () => this.share());
         document.getElementById('shortcuts-btn')?.addEventListener('click', () => this.shortcuts.toggle());
         document.getElementById('undo-btn')?.addEventListener('click', () => {
             this.renderer.undo();
@@ -421,6 +429,18 @@ class App {
         const filename = `bom-${this.timestamp()}.csv`;
         this.downloadBlob(new Blob([buildBomCsv(ir)], { type: 'text/csv' }), filename);
         this.toast.success(`Exported: ${filename}`);
+    }
+
+    private share(): void {
+        const url = buildShareUrl(window.location.href, this.codeEditor.value);
+        const clipboard = navigator.clipboard;
+        if (clipboard?.writeText) {
+            clipboard.writeText(url)
+                .then(() => this.toast.success('Share link copied to clipboard'))
+                .catch(() => this.toast.info(`Share link: ${url}`));
+        } else {
+            this.toast.info(`Share link: ${url}`);
+        }
     }
 
     private downloadBlob(blob: Blob, filename: string): void {
