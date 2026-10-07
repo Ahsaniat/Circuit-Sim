@@ -68,3 +68,27 @@ describe('SnapManager.snapICComponent', () => {
         expect(result.snapCol).toBe(15);
     });
 });
+
+describe('SnapManager.getConnectedComponents', () => {
+    it('ties all rows of a column together within the same half', () => {
+        snap.clearOccupancy();
+        snap.registerPinOccupancy(10, 'C', 'R1', 1);
+        snap.registerPinOccupancy(10, 'A', 'R2', 1);
+        snap.registerPinOccupancy(11, 'C', 'R3', 1);
+
+        const connected = snap.getConnectedComponents(10, 'E');
+        const ids = connected.map(o => o.componentId).sort();
+        expect(ids).toEqual(['R1', 'R2']);
+    });
+
+    it('treats power rails as full-width buses', () => {
+        snap.clearOccupancy();
+        snap.registerWireOccupancy(5, 'TOP+', 0, 'from');
+        snap.registerWireOccupancy(40, 'TOP+', 1, 'from');
+        snap.registerWireOccupancy(40, 'BOTTOM+', 2, 'from');
+
+        const connected = snap.getConnectedComponents(1, 'TOP+');
+        const ids = connected.map(o => o.componentId).sort();
+        expect(ids).toEqual(['wire_0', 'wire_1']);
+    });
+});

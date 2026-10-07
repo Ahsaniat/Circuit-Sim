@@ -96,13 +96,21 @@ export class SnapManager {
     }
     
     /**
-     * Get all components connected to the same electrical node
-     * (same column means electrically connected on breadboard)
+     * Get all components connected to the same electrical node.
+     *
+     * Breadboard semantics: main rows A–E and F–J are tied together within
+     * a column; power rails are buses that run the full width of the board.
      */
     getConnectedComponents(col: number, row: string): HoleOccupancy[] {
         const connected: HoleOccupancy[] = [];
-        
-        // All rows in same half share connectivity within a column
+
+        if (BreadboardGeometry.RAIL_ROWS.includes(row)) {
+            for (let c = 1; c <= BreadboardGeometry.NUM_COLS; c++) {
+                connected.push(...this.getHoleOccupancy(c, row));
+            }
+            return connected;
+        }
+
         const isTopHalf = BreadboardGeometry.TOP_ROWS.includes(row);
         const rowsToCheck = isTopHalf ? BreadboardGeometry.TOP_ROWS : BreadboardGeometry.BOTTOM_ROWS;
         
