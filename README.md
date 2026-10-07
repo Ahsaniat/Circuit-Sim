@@ -1,89 +1,172 @@
+![CI](https://github.com/Ahsaniat/Circuit-Sim/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white)
+
 # CircuitSim
 
-A code-to-circuit simulator with a domain-specific language for describing electronic circuits using real IC components and breadboard layouts.
+**Write a circuit in code, watch it land on a breadboard, simulate it, and export it.** CircuitSim is a small domain-specific language for describing electronic circuits with real 74xx ICs, a compiler that places every part on a virtual 830-point breadboard, a digital simulator that lights the LEDs, and an electrical rule check that catches wiring mistakes before you build them.
 
-## Features
+![CircuitSim simulating a battery + LED circuit with live wire states](__docs__/screenshots/hero-simulation.png)
 
-- **DSL for Circuits**: Write circuit descriptions in a simple, readable syntax
-- **Real IC Support**: Built-in library of 74xx series, 555 timers, op-amps
-- **Breadboard Layout**: Automatic component placement with proper pin alignment
-- **Visual Output**: Canvas-based rendering with colored wire routing
-- **Live Compilation**: Instant feedback in the browser
+## What it does
 
-## Quick Start
+**Compile a DSL.** Declare components and connections in a readable syntax; the compiler resolves IC pinouts, places parts on the breadboard and routes the wires.
 
-### Web Interface
+**Simulate the result.** Toggle Simulate and the canvas comes alive: wires turn green for logic high and blue for logic low, LEDs glow, buzzers show sound arcs, and oscillating circuits are reported instead of hanging.
+
+**Catch mistakes early.** The ERC flags shorted nets, disconnected IC power pins, LEDs without series resistors, floating parts, output contention and missing power sources, right under the editor.
+
+**Work visually.** Drag components and wires; they snap to holes with magnetic feedback. Undo/redo, autosave, fit-to-view, panning and touch gestures are all built in.
+
+**Share and export.** Full-circuit PNG, vector SVG, a grouped BOM as CSV, and permalinks that encode the whole circuit in the URL.
+
+## Quick start
 
 ```bash
+# 1. Clone
+git clone https://github.com/Ahsaniat/Circuit-Sim.git
+cd Circuit-Sim
+
+# 2. Build the C++ compiler and run its tests
+cmake -S . -B build -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j1                      # -j1 keeps low-memory machines happy
+ctest --test-dir build --output-on-failure
+
+# 3. Compile a circuit from the CLI
+./build/circuitsim tests/conformance/led-basic.ok.csim
+
+# 4. Run the web app
 cd web
-npm install
-npm run dev
+npm ci
+npm run dev        # http://localhost:5173
 ```
 
-Open `http://localhost:5173` in your browser.
+| Command | What it does |
+| :--- | :--- |
+| `npm run dev` | Start the Vite dev server with hot reload |
+| `npm test` | Run the Vitest suite (compiler, geometry, simulation, ERC, exports) |
+| `npm run typecheck` | TypeScript strict check |
+| `npm run build` | Typecheck and produce a production bundle in `web/dist` |
+| `ctest --test-dir build` | Run the C++ compiler test suite |
 
-### Command Line
+## The language
 
-```bash
-cd build
-cmake ..
-make
-./circuitsim circuit.csim
-```
-
-## Language Overview
-
-```
-// Declare components
-@AND A1 7408        // 7408 AND gate IC
-@OR O1 7432        // 7432 OR gate IC
+```csim
+// Battery + LED with current-limiting resistor
+@battery BAT1 9V
+@resistor R1 330
+@led LED1 red
 @board B1 breadboard_830
 
-// Define connections
 map (
-    (A1 pin 3 -> O1 pin 1)    // Connect AND output to OR input
-    (A1 pin 6 -> O1 pin 2)
-    (O1 pin 3 -> B1 pin 30)   // Final output to breadboard
+    (BAT1 pin 1 -> R1 pin 1)
+    (R1 pin 2 -> LED1 pin 1)
+    (BAT1 pin 2 -> LED1 pin 2)
 )
 ```
 
-See [docs/LANGUAGE_REFERENCE.md](docs/LANGUAGE_REFERENCE.md) for complete documentation.
+| Concept | Syntax | Notes |
+| :--- | :--- | :--- |
+| Component | `@keyword ID [value]` | Values keep their units: `10k`, `4.7k`, `100uF`, `16MHz` |
+| Board | `@board ID breadboard_830` | 830-point breadboard (400 and 170 also accepted) |
+| Connection | `(SRC pin N -> DST pin M, ...)` | Multiple destinations per source |
+| Custom IC | `def MyIC (A -> input, B -> output)` | Pin names and directions feed tooltips and ERC |
+| Comments | `// ...` | Layout metadata is stored in a trailing `//!layout:` comment |
 
-## Project Structure
+<details>
+<summary><b>Component keywords</b></summary>
+
+| Category | Keywords |
+| :--- | :--- |
+| Logic gates | `@AND` `@OR` `@NOT` `@NAND` `@NOR` `@XOR` `@AND3` `@NAND3` `@NOR3` `@AND4` `@NAND4` |
+| MSI | `@mux_4x1` `@mux_8x1` `@decoder_3to8` `@decoder_2to4` `@encoder_8to3` `@shift_reg_8` `@d_flipflop` `@jk_flipflop` `@latch_8` `@counter_4bit` `@counter_decade` |
+| Passives | `@resistor` `@capacitor` `@inductor` `@potentiometer` |
+| Diodes & LEDs | `@diode` `@zener_diode` `@schottky_diode` `@led` `@ir_led` `@photodiode` `@ldr` |
+| Transistors | `@npn` `@pnp` `@nmos` `@pmos` |
+| Switches | `@switch_spst` `@switch_spdt` `@pushbutton` |
+| Displays & audio | `@display_7seg` `@buzzer` `@passive_buzzer` |
+| Motors & power | `@motor_dc` `@servo` `@battery` `@regulator` `@crystal` |
+| Generic | `@comp ID 7408` for any built-in IC number |
+
+</details>
+
+## Simulation and ERC
+
+The simulator extracts an electrical netlist from the physical placement — column halves, full-width power rails, pins, wires, closed switches and battery terminals — then evaluates to a fixed point with four values: `0`, `1`, `X` (unknown/conflict) and `Z` (floating).
+
+| Status | Components |
+| :--- | :--- |
+| Fully modelled | 7400, 7402, 7404, 7408, 7410, 7411, 7420, 7421, 7427, 7432, 7486 gates, LEDs, buzzers, resistors, inductors, switches (open), batteries |
+| Reported as unsupported | 555 timer, counters, flip-flops, op-amps, displays (shown in ERC, outputs treated as unknown) |
+
+## Screenshots
+
+**ERC diagnostics** — problems appear under the editor and in the status bar.
+
+![ERC diagnostics panel](__docs__/screenshots/erc-diagnostics.png)
+
+**Net highlighting** — hovering a wire lights up its whole electrical net.
+
+![Net highlighting](__docs__/screenshots/net-highlight.png)
+
+**Light theme** — the canvas follows the theme through CSS custom properties.
+
+![Light theme](__docs__/screenshots/light-canvas.png)
+
+<details>
+<summary><b>More screenshots</b></summary>
+
+| Screenshot | Shows |
+| :--- | :--- |
+| [icons-and-drag.png](__docs__/screenshots/icons-and-drag.png) | Tabler Icons palette, BOM/Share toolbar, a dragged wire |
+| [simulation-led.png](__docs__/screenshots/simulation-led.png) | Simulation overlay on a battery + LED circuit |
+| [inline-error.png](__docs__/screenshots/inline-error.png) | Inline compile diagnostics in the editor |
+| [dark-canvas.png](__docs__/screenshots/dark-canvas.png) | Dark theme canvas |
+| [app-editor.png](__docs__/screenshots/app-editor.png) | Early editor screenshot (pre-CodeMirror) |
+
+</details>
+
+## Architecture
+
+The dependency arrow points one way: the UI depends on the compiler and simulation, never the reverse.
+
+| Layer | Location | Responsibility |
+| :--- | :--- | :--- |
+| DSL compiler (C++) | `src/lexer` `src/parser` `src/semantic` `src/ir` | CLI compiler with diagnostics and JSON IR |
+| DSL compiler (web) | `web/src/compiler` | Browser compiler with the same grammar and error semantics |
+| Geometry | `web/src/geometry` | Breadboard coordinates, footprints, magnetic snapping |
+| Simulation | `web/src/simulation` | Netlist extraction and digital fixed-point solver |
+| ERC | `web/src/erc` | Electrical rule checks |
+| Rendering | `web/src/renderer` | Canvas scene, interaction, exports |
+| UI | `web/src/ui` | CodeMirror editor, palette, panels, theme |
+
+<details>
+<summary><b>Compiler pipeline</b></summary>
 
 ```
-CircuitSim/
-├── src/                 # C++ compiler
-│   ├── lexer/          # Tokenizer
-│   ├── parser/         # Parser + AST
-│   ├── semantic/       # Type checking
-│   └── ir/             # IR generation
-├── web/                # Web interface
-│   └── src/
-│       ├── compiler/   # TypeScript compiler
-│       └── renderer/   # Canvas rendering
-├── docs/               # Documentation
-└── tests/              # Test circuits
+source → lexer → parser → semantic validation → IR generation → JSON / canvas scene
 ```
 
-## Built-in Components
+Both compilers are exercised against the same fixtures in `tests/conformance/`: files ending `.ok.csim` must compile, files ending `.err.csim` must fail. This keeps the two implementations honest without duplicating test suites.
 
-| Category | Components |
-|----------|------------|
-| Logic Gates | 7400, 7402, 7404, 7408, 7410, 7420, 7432, 7486 |
-| Flip-flops | 7474, 74373, 74374 |
-| Counters | 7490, 74161 |
-| Decoders | 7447, 74138, 74139 |
-| Multiplexers | 74151, 74153 |
-| Timers | 555, NE555 |
-| Op-amps | 741, LM741, LM358 |
+</details>
 
-## Build Requirements
+## Development
 
-- C++17 compiler (GCC, Clang, MSVC)
-- CMake 3.16+
-- Node.js 18+ (for web interface)
+| Task | Command |
+| :--- | :--- |
+| Watch mode tests | `npm run test:watch` (in `web/`) |
+| C++ tests | `cmake --build build -j1 && ctest --test-dir build` |
+| Memory watcher (local) | `nohup scripts/dev/memwatch.sh &` writes `logs/memwatch.log` |
+
+CI runs the C++ build and tests, the TypeScript typecheck, the web test suite and a production build on every push and pull request.
+
+## Roadmap
+
+Not implemented yet, tracked honestly: simulation models for the 555, counters and flip-flops; interactive switch toggling; SPICE netlist export; PWA/offline install; guided lessons; a visual custom-IC editor. The ERC panel lists every IC that currently lacks a model.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). Bundled third-party assets and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

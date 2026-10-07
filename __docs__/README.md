@@ -19,7 +19,12 @@ intentionally not tracked.
 
 | File | Shows |
 | :--- | :--- |
-| [screenshots/app-editor.png](screenshots/app-editor.png) | Dark theme with the DSL editor and rendered breadboard |
+| [screenshots/hero-simulation.png](screenshots/hero-simulation.png) | Battery + LED simulation with live wire states (hero image) |
+| [screenshots/simulation-led.png](screenshots/simulation-led.png) | Simulation overlay on a battery + LED circuit |
+| [screenshots/erc-diagnostics.png](screenshots/erc-diagnostics.png) | ERC problems under the editor and in the status bar |
+| [screenshots/net-highlight.png](screenshots/net-highlight.png) | Net highlighting on wire hover |
+| [screenshots/icons-and-drag.png](screenshots/icons-and-drag.png) | Tabler Icons palette, BOM/Share toolbar, dragged wire |
+| [screenshots/inline-error.png](screenshots/inline-error.png) | Inline compile diagnostics in the editor |
 | [screenshots/dark-canvas.png](screenshots/dark-canvas.png) | Theme-aware canvas in dark mode |
 | [screenshots/light-canvas.png](screenshots/light-canvas.png) | Theme-aware canvas in light mode |
-| [screenshots/inline-error.png](screenshots/inline-error.png) | Inline compile diagnostics and error panel |
+| [screenshots/app-editor.png](screenshots/app-editor.png) | Early editor screenshot (pre-CodeMirror) |
