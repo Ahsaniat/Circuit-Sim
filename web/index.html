@@ -472,6 +472,37 @@
         }
         .error-panel.hidden { display: none; }
 
+        /* --- ERC diagnostics --- */
+        .diagnostics-panel {
+            flex-shrink: 0;
+            max-height: 140px;
+            overflow-y: auto;
+            border-top: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+            font-size: 11px;
+        }
+        .diagnostics-panel.hidden { display: none; }
+        .diagnostics-header {
+            padding: 6px 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-secondary);
+            position: sticky;
+            top: 0;
+            background: var(--bg-tertiary);
+        }
+        .diagnostics-item {
+            display: flex;
+            gap: 6px;
+            padding: 4px 12px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        .diagnostics-icon { flex-shrink: 0; font-weight: 700; }
+        .diagnostics-error .diagnostics-icon { color: var(--error); }
+        .diagnostics-warning .diagnostics-icon { color: var(--warning); }
+        .diagnostics-info .diagnostics-icon { color: var(--info); }
+
         /* ============================================
            SPLIT HANDLE
            ============================================ */
@@ -905,6 +936,7 @@
                     </div>
                     <div id="code-editor-container"></div>
                     <div class="error-panel hidden" id="error-panel"></div>
+                    <div id="diagnostics-panel"></div>
                 </div>
             </div>
 

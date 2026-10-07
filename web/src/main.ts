@@ -21,6 +21,8 @@ import {
 import { BreadboardGeometry } from './geometry/BreadboardGeometry';
 import { extractNetlist, Netlist } from './simulation/Netlist';
 import { simulate } from './simulation/Simulator';
+import { runErc } from './erc/Erc';
+import { DiagnosticsPanel } from './ui/DiagnosticsPanel';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
 @AND A1 7408
@@ -59,6 +61,7 @@ class App {
     private autosaveTimer: number | null = null;
     private simActive = false;
     private netlist: Netlist | null = null;
+    private diagnostics: DiagnosticsPanel;
 
     constructor() {
         const canvas = document.getElementById('circuit-canvas') as HTMLCanvasElement;
@@ -97,6 +100,9 @@ class App {
         this.codeEditor.setOnCursorChange((line, col) => {
             this.statusBar.setCursor(line, col);
         });
+
+        // ERC diagnostics
+        this.diagnostics = new DiagnosticsPanel(document.getElementById('diagnostics-panel')!);
 
         // Zoom controls
         const canvasPanel = document.getElementById('canvas-panel')!;
@@ -251,8 +257,19 @@ class App {
             }
             this.codeEditor.clearError();
             this.renderer.render(ir);
-            this.statusBar.setStatus('Compiled', 'success');
             this.statusBar.setStats(ir.components.length, ir.wires.length);
+
+            // Extract the netlist once per compile and run the rule check.
+            this.netlist = this.buildNetlist(ir);
+            const simCheck = simulate(ir, this.netlist);
+            const issues = runErc(ir, this.netlist, simCheck.unsupported);
+            this.diagnostics.setIssues(issues);
+            const problems = issues.length;
+            this.statusBar.setStatus(
+                problems > 0 ? `Compiled · ${problems} problem${problems === 1 ? '' : 's'}` : 'Compiled',
+                problems > 0 ? 'compiling' : 'success'
+            );
+
             this.syncZoom();
             this.syncHistoryButtons();
             this.scheduleAutosave();
@@ -279,6 +296,7 @@ class App {
         this.renderer.setSimulation(null, null);
         this.simActive = false;
         this.netlist = null;
+        this.diagnostics.setIssues([]);
         this.syncSimButton();
         this.hideError();
         this.statusBar.setStatus('Ready', 'ready');
@@ -300,6 +318,14 @@ class App {
         }
     }
 
+    private buildNetlist(ir: CircuitIR): Netlist {
+        const geometries = new Map<string, BreadboardGeometry>();
+        for (const board of ir.boards) {
+            geometries.set(board.id, new BreadboardGeometry(board.position.x, board.position.y));
+        }
+        return extractNetlist(ir, geometries);
+    }
+
     private runSimulation(): void {
         const ir = this.renderer.getIR();
         if (!ir || ir.components.length === 0) {
@@ -309,15 +335,10 @@ class App {
             return;
         }
 
-        const geometries = new Map<string, BreadboardGeometry>();
-        for (const board of ir.boards) {
-            geometries.set(board.id, new BreadboardGeometry(board.position.x, board.position.y));
-        }
-        this.netlist = extractNetlist(ir, geometries);
+        this.netlist = this.buildNetlist(ir);
         const result = simulate(ir, this.netlist);
         this.renderer.setSimulation(result, this.netlist);
         this.syncSimButton();
-
         const lit = result.litLeds.size;
         if (result.unstable) {
             this.statusBar.setStatus('Simulation unstable (oscillating)', 'error');
