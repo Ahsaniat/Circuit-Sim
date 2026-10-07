@@ -367,7 +367,16 @@ class Parser {
             } else if (this.match('BOARD')) {
                 program.boards.push(this.parseBoardDecl());
             } else if (this.match('MAP')) {
-                program.connections = this.parseMapBlock();
+                const mapToken = this.tokens[this.current - 1];
+                const connections = this.parseMapBlock();
+                if (program.connections.length > 0) {
+                    throw new CompileError(
+                        "Duplicate 'map' block; merge the connections into a single block",
+                        mapToken.line,
+                        mapToken.column
+                    );
+                }
+                program.connections = connections;
             } else if (this.match('DEF')) {
                 this.skipICDef();
             } else {
@@ -467,7 +476,12 @@ class Parser {
     private parsePinRef(): PinRef {
         const componentId = this.consume('IDENTIFIER', 'Expected component identifier');
         this.consume('PIN', "Expected 'pin' keyword");
-        const pinNumber = parseInt(this.consume('NUMBER', 'Expected pin number').lexeme, 10);
+        const pinToken = this.consume('NUMBER', 'Expected pin number');
+        // NUMBER tokens may carry suffixes (10k, 2N2222); a pin must be digits.
+        if (!/^\d+$/.test(pinToken.lexeme)) {
+            throw new CompileError(`Invalid pin number '${pinToken.lexeme}'`, pinToken.line, pinToken.column);
+        }
+        const pinNumber = parseInt(pinToken.lexeme, 10);
         return { componentId: componentId.lexeme, pinNumber, line: componentId.line, column: componentId.column };
     }
 

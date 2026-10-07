@@ -59,4 +59,16 @@ describe('semantic validation', () => {
             expect((err as Error).message).toContain('Line 5');
         }
     });
+
+    it('rejects duplicate map blocks', () => {
+        expect(() =>
+            compile(`@comp A1 7408\nmap (\n (A1 pin 1 -> A1 pin 2)\n)\nmap (\n (A1 pin 3 -> A1 pin 4)\n)\n`)
+        ).toThrowError(/Duplicate 'map' block/);
+    });
+
+    it('rejects pin numbers with alphanumeric suffixes', () => {
+        expect(() => compile(`@comp A1 7408\nmap (\n (A1 pin 2N2222 -> A1 pin 1)\n)\n`)).toThrowError(
+            /Invalid pin number '2N2222'/
+        );
+    });
 });
