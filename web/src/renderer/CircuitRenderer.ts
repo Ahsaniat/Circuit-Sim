@@ -178,6 +178,18 @@ export class CircuitRenderer {
         return px / (this.zoom * BASE_SCALE);
     }
 
+    /**
+     * Pointer capture can throw for synthetic or already-released pointers;
+     * dragging must keep working in that case.
+     */
+    private capturePointer(pointerId: number): void {
+        try {
+            this.canvas.setPointerCapture(pointerId);
+        } catch {
+            // Ignore: capture is an optimisation, not a requirement.
+        }
+    }
+
     private getMousePos(e: MouseEvent): Position {
         const rect = this.canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
@@ -344,7 +356,7 @@ export class CircuitRenderer {
             e.preventDefault();
             this.isPanning = true;
             this.panStart = { x: e.clientX, y: e.clientY };
-            this.canvas.setPointerCapture(e.pointerId);
+            this.capturePointer(e.pointerId);
             this.canvas.style.cursor = 'grabbing';
             return;
         }
@@ -373,7 +385,7 @@ export class CircuitRenderer {
                 this.dragOffset = { x: pos.x - element.x, y: pos.y - element.y };
             }
             
-            this.canvas.setPointerCapture(e.pointerId);
+            this.capturePointer(e.pointerId);
             this.canvas.style.cursor = 'grabbing';
             this.redraw();
         } else {
