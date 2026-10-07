@@ -33,6 +33,14 @@ describe('SnapManager.findNearestHole', () => {
         const result = snap.snapPosition({ x: target.x + half, y: target.y + half });
         expect(result.snapped).toBe(false);
     });
+
+    it('accepts a custom radius so callers can adapt to zoom', () => {
+        const target = geo.getHolePosition(10, 'C');
+        const half = BreadboardGeometry.HOLE_SPACING / 2;
+        const point = { x: target.x + half, y: target.y };
+        expect(snap.snapPosition(point).snapped).toBe(false);
+        expect(snap.snapPosition(point, 1.5).snapped).toBe(true);
+    });
 });
 
 describe('SnapManager.snapICComponent', () => {

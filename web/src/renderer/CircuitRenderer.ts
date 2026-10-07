@@ -18,8 +18,11 @@ const IC_PIN_LENGTH = 1.5;  // Pin length in base units (matches compiler)
 const E_TO_F_DISTANCE = BreadboardGeometry.HOLE_SPACING + BreadboardGeometry.CHANNEL_HEIGHT;
 const IC_BODY_HEIGHT = E_TO_F_DISTANCE - 2 * IC_PIN_LENGTH;
 
-// Wire hit detection tolerance (in base units)
-const WIRE_HIT_TOLERANCE = 1.5;
+// Screen-space interaction tolerances. These are converted to base units
+// against the current zoom so they feel identical at every zoom level.
+const WIRE_HIT_TOLERANCE_PX = 6;
+const WIRE_TERMINAL_RADIUS_PX = 8;
+const SNAP_RADIUS_PX = 6;
 
 interface DraggableElement {
     id: string;
@@ -32,9 +35,6 @@ interface DraggableElement {
     wireIndex?: number;      // For wires
     terminal?: 'from' | 'to';  // For wire terminals
 }
-
-// Wire terminal hit detection radius (in base units)
-const WIRE_TERMINAL_RADIUS = 2;
 
 /**
  * Colors sourced from CSS custom properties so the canvas follows the
@@ -155,6 +155,11 @@ export class CircuitRenderer {
         window.addEventListener('keyup', this.onKeyUp.bind(this));
     }
 
+    /** Convert a screen-pixel distance to base units at the current zoom. */
+    private screenToBase(px: number): number {
+        return px / (this.zoom * BASE_SCALE);
+    }
+
     private getMousePos(e: MouseEvent): Position {
         const rect = this.canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
@@ -198,6 +203,7 @@ export class CircuitRenderer {
     }
 
     private findElementAt(pos: Position): DraggableElement | null {
+        const terminalRadius = this.screenToBase(WIRE_TERMINAL_RADIUS_PX);
         // Priority: Wire terminals → Wires → Components → Boards
         // First check wire terminals (highest priority for precise terminal dragging)
         if (this.circuitIR) {
@@ -206,7 +212,7 @@ export class CircuitRenderer {
                 
                 // Check 'from' terminal
                 const distFrom = Math.sqrt((pos.x - wire.from.x) ** 2 + (pos.y - wire.from.y) ** 2);
-                if (distFrom < WIRE_TERMINAL_RADIUS) {
+                if (distFrom < terminalRadius) {
                     return {
                         id: `wire_${i}_from`,
                         type: 'wire_terminal',
@@ -221,7 +227,7 @@ export class CircuitRenderer {
                 
                 // Check 'to' terminal
                 const distTo = Math.sqrt((pos.x - wire.to.x) ** 2 + (pos.y - wire.to.y) ** 2);
-                if (distTo < WIRE_TERMINAL_RADIUS) {
+                if (distTo < terminalRadius) {
                     return {
                         id: `wire_${i}_to`,
                         type: 'wire_terminal',
@@ -274,8 +280,9 @@ export class CircuitRenderer {
         segments.push([current, { x: wire.to.x, y: wire.to.y }]);
         
         // Check distance to each segment
+        const tolerance = this.screenToBase(WIRE_HIT_TOLERANCE_PX);
         for (const [p1, p2] of segments) {
-            if (this.distanceToSegment(point, p1, p2) < WIRE_HIT_TOLERANCE) {
+            if (this.distanceToSegment(point, p1, p2) < tolerance) {
                 return true;
             }
         }
@@ -431,7 +438,7 @@ export class CircuitRenderer {
                         wire.waypoints = undefined;
                         
                         // Snap the terminal position to nearest hole
-                        const snapResult = snapMgr.snapPosition(pos);
+                        const snapResult = snapMgr.snapPosition(pos, this.screenToBase(SNAP_RADIUS_PX));
                         this.isSnapped = snapResult.snapped;
                         
                         if (terminal === 'from') {
@@ -545,7 +552,8 @@ export class CircuitRenderer {
                                 { x: newBaseX, y: newBaseY },
                                 pinsPerSide,
                                 firstPinOffsetX,
-                                IC_PIN_LENGTH
+                                IC_PIN_LENGTH,
+                                this.screenToBase(SNAP_RADIUS_PX)
                             );
                             
                             comp.position.x = snapResult.bodyX;
@@ -568,7 +576,8 @@ export class CircuitRenderer {
                             const pin1Offset = { x: pin1.offsetX, y: pin1.offsetY };
                             const snapResult = snapMgr.snapComponentByPin(
                                 { x: newBaseX, y: newBaseY },
-                                pin1Offset
+                                pin1Offset,
+                                this.screenToBase(SNAP_RADIUS_PX)
                             );
                             
                             comp.position.x = snapResult.bodyX;

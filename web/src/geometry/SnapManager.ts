@@ -15,8 +15,9 @@
 import { BreadboardGeometry, HolePosition } from './BreadboardGeometry';
 import { Position } from '../types';
 
-// Snap threshold in base units (2.54mm per unit)
-// If a pin is within this distance of a hole center, it snaps
+// Snap threshold in base units (2.54mm per unit). Callers that know the
+// current zoom should pass a radius converted from screen pixels instead so
+// snapping feels the same at every zoom level.
 export const SNAP_RADIUS = 1.2;  // About 3mm - close enough to grab
 
 export interface HoleOccupancy {
@@ -118,7 +119,7 @@ export class SnapManager {
      * Returns snap info including whether the position is within snap range
      * Searches main rows (A-J) and power rail rows (TOP+, TOP-, BOTTOM+, BOTTOM-)
      */
-    findNearestHole(pos: Position): SnapResult {
+    findNearestHole(pos: Position, radius: number = SNAP_RADIUS): SnapResult {
         let nearestHole: HolePosition | undefined;
         let minDistance = Infinity;
         
@@ -149,7 +150,7 @@ export class SnapManager {
         }
         
         return {
-            snapped: minDistance <= SNAP_RADIUS,
+            snapped: minDistance <= radius,
             hole: nearestHole,
             distance: minDistance
         };
@@ -159,8 +160,8 @@ export class SnapManager {
      * Snap a position to the nearest hole if within range
      * Returns the snapped position and hole info
      */
-    snapPosition(pos: Position): { x: number; y: number; snapped: boolean; col?: number; row?: string } {
-        const result = this.findNearestHole(pos);
+    snapPosition(pos: Position, radius: number = SNAP_RADIUS): { x: number; y: number; snapped: boolean; col?: number; row?: string } {
+        const result = this.findNearestHole(pos, radius);
         
         if (result.snapped && result.hole) {
             return {
@@ -183,7 +184,7 @@ export class SnapManager {
      * @param pin1Offset - Offset of pin 1 from body position
      * @returns Adjusted body position that snaps pin 1 to nearest hole
      */
-    snapComponentByPin(bodyPos: Position, pin1Offset: Position): { 
+    snapComponentByPin(bodyPos: Position, pin1Offset: Position, radius: number = SNAP_RADIUS): { 
         bodyX: number; 
         bodyY: number; 
         snapped: boolean;
@@ -197,7 +198,7 @@ export class SnapManager {
         };
         
         // Find nearest hole for pin 1
-        const snapResult = this.snapPosition(pin1Pos);
+        const snapResult = this.snapPosition(pin1Pos, radius);
         
         if (snapResult.snapped) {
             // Adjust body position so pin 1 lands on the snapped hole
@@ -221,7 +222,7 @@ export class SnapManager {
      * Snap an IC component - special handling because it straddles the channel
      * Pin 1 should snap to row F, and the IC body should be positioned accordingly
      */
-    snapICComponent(bodyPos: Position, _pinsPerSide: number, firstPinOffsetX: number, pinLength: number): {
+    snapICComponent(bodyPos: Position, _pinsPerSide: number, firstPinOffsetX: number, pinLength: number, radius: number = SNAP_RADIUS): {
         bodyX: number;
         bodyY: number;
         snapped: boolean;
@@ -251,7 +252,7 @@ export class SnapManager {
             }
         }
         
-        if (minDistance <= SNAP_RADIUS) {
+        if (minDistance <= radius) {
             // Snap to this column
             const targetHole = this.geometry.getHolePosition(nearestCol, 'F');
             
