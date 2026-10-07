@@ -158,21 +158,6 @@ export class BreadboardGeometry {
     }
     
     /**
-     * Get Y position of the center channel
-     */
-    get channelY(): number {
-        const rowEY = this.rowYPositions.get('E') ?? 0;
-        return rowEY + BreadboardGeometry.HOLE_SPACING / 2;
-    }
-    
-    /**
-     * Get the IC row - row E for top pins, row F for bottom pins
-     */
-    getICPinRow(isTopPin: boolean): string {
-        return isTopPin ? 'E' : 'F';
-    }
-    
-    /**
      * Calculate IC body position so pins align with holes
      * IC straddles the channel: top pins in row E, bottom pins in row F
      * @param startCol - Column for first pin (1-indexed)

@@ -47,11 +47,6 @@ char Lexer::peek() const {
     return source_[current_];
 }
 
-char Lexer::peekNext() const {
-    if (current_ + 1 >= source_.size()) return '\0';
-    return source_[current_ + 1];
-}
-
 char Lexer::advance() {
     char c = source_[current_++];
     if (c == '\n') {

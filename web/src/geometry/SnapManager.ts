@@ -89,13 +89,6 @@ export class SnapManager {
     }
     
     /**
-     * Check if a hole is occupied by any component
-     */
-    isHoleOccupied(col: number, row: string): boolean {
-        return this.occupancyMap.has(`${col}:${row}`);
-    }
-    
-    /**
      * Get all components connected to the same electrical node.
      *
      * Breadboard semantics: main rows A–E and F–J are tied together within
@@ -274,27 +267,5 @@ export class SnapManager {
             bodyY: bodyPos.y,
             snapped: false
         };
-    }
-    
-    /**
-     * Get snap preview positions for visual feedback
-     * Returns list of holes that would be occupied if component is placed at current position
-     */
-    getSnapPreview(bodyPos: Position, pinOffsets: Position[]): HolePosition[] {
-        const previewHoles: HolePosition[] = [];
-        
-        for (const offset of pinOffsets) {
-            const pinPos = {
-                x: bodyPos.x + offset.x,
-                y: bodyPos.y + offset.y
-            };
-            
-            const result = this.findNearestHole(pinPos);
-            if (result.hole && result.distance <= SNAP_RADIUS * 2) {
-                previewHoles.push(result.hole);
-            }
-        }
-        
-        return previewHoles;
     }
 }

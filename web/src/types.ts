@@ -1,3 +1,7 @@
+import type { ComponentCategory } from './geometry/ComponentFootprints';
+
+export type { ComponentCategory };
+
 export interface Position {
     x: number;
     y: number;
@@ -18,8 +22,6 @@ export interface Wire {
     /** Board this wire belongs to (defaults to the first board). */
     boardId?: string;
 }
-
-export type ComponentCategory = 'ic' | 'passive' | 'diode' | 'transistor' | 'led' | 'sensor' | 'switch' | 'display' | 'buzzer' | 'motor' | 'power' | 'crystal';
 
 export interface ComponentIR {
     id: string;
