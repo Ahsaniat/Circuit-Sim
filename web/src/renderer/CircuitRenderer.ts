@@ -126,6 +126,10 @@ export class CircuitRenderer {
     private simResult: SimulationResult | null = null;
     private simNetlist: Netlist | null = null;
 
+    // Netlist for highlighting (set even when simulation is off)
+    private netlist: Netlist | null = null;
+    private hoveredNetId: number | null = null;
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         const ctx = canvas.getContext('2d');
@@ -621,6 +625,15 @@ export class CircuitRenderer {
             const element = this.findElementAt(pos);
             this.snapPreviewHoles = [];
             this.isSnapped = false;
+
+            // Net highlighting: hovering a wire lights up its whole net.
+            const netId = element?.type === 'wire' && element.wireIndex !== undefined && this.netlist
+                ? this.netlist.wireNet[element.wireIndex] ?? null
+                : null;
+            if (netId !== this.hoveredNetId) {
+                this.hoveredNetId = netId;
+                this.redraw();
+            }
             
             // Update cursor
             if (element?.type === 'wire_terminal') {
@@ -701,9 +714,11 @@ export class CircuitRenderer {
         if (this.isDragging || this.isPanning || this.activePointers.size > 0) return;
         this.canvas.style.cursor = this.spacePressed ? 'grab' : 'default';
         this.hoveredComponentId = null;
+        this.hoveredNetId = null;
         this.snapPreviewHoles = [];
         this.isSnapped = false;
         this.hideTooltip();
+        this.redraw();
     }
 
     private onKeyDown(e: KeyboardEvent): void {
@@ -884,7 +899,26 @@ export class CircuitRenderer {
     setSimulation(result: SimulationResult | null, netlist: Netlist | null): void {
         this.simResult = result;
         this.simNetlist = netlist;
+        if (netlist) this.netlist = netlist;
         this.redraw();
+    }
+
+    /** Provide the netlist used for net highlighting. */
+    setNetlist(netlist: Netlist | null): void {
+        this.netlist = netlist;
+        this.hoveredNetId = null;
+    }
+
+    private highlightedNetId(): number | null {
+        if (!this.netlist) return null;
+        if (this.hoveredNetId !== null) return this.hoveredNetId;
+        if (this.selectedId) {
+            const match = this.selectedId.match(/^wire_(\d+)/);
+            if (match) {
+                return this.netlist.wireNet[parseInt(match[1], 10)] ?? null;
+            }
+        }
+        return null;
     }
 
     isSimulating(): boolean {
@@ -2636,6 +2670,22 @@ export class CircuitRenderer {
 
         this.ctx.lineTo(toX, toY);
         this.ctx.stroke();
+
+        // Net highlight halo
+        const netId = wireIndex !== undefined && this.netlist ? this.netlist.wireNet[wireIndex] : undefined;
+        if (netId !== undefined && netId === this.highlightedNetId()) {
+            this.ctx.strokeStyle = 'rgba(88, 166, 255, 0.35)';
+            this.ctx.lineWidth = 9 / this.zoom;
+            this.ctx.beginPath();
+            this.ctx.moveTo(fromX, fromY);
+            if (wire.waypoints) {
+                for (const wp of wire.waypoints) {
+                    this.ctx.lineTo(wp.x * S, wp.y * S);
+                }
+            }
+            this.ctx.lineTo(toX, toY);
+            this.ctx.stroke();
+        }
 
         // Connection dots - made larger
         this.ctx.fillStyle = strokeColor;

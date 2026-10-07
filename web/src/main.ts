@@ -261,6 +261,7 @@ class App {
 
             // Extract the netlist once per compile and run the rule check.
             this.netlist = this.buildNetlist(ir);
+            this.renderer.setNetlist(this.netlist);
             const simCheck = simulate(ir, this.netlist);
             const issues = runErc(ir, this.netlist, simCheck.unsupported);
             this.diagnostics.setIssues(issues);
