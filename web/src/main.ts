@@ -24,6 +24,7 @@ import { simulate } from './simulation/Simulator';
 import { runErc } from './erc/Erc';
 import { DiagnosticsPanel } from './ui/DiagnosticsPanel';
 import { buildBomCsv } from './export/Bom';
+import { registerCustomIC } from './components/PinDatabase';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
 @AND A1 7408
@@ -259,6 +260,11 @@ class App {
             }
             this.codeEditor.clearError();
             this.renderer.render(ir);
+            if (ir.customICs) {
+                for (const ic of ir.customICs) {
+                    registerCustomIC(ic.name, ic.pins);
+                }
+            }
             this.statusBar.setStats(ir.components.length, ir.wires.length);
 
             // Extract the netlist once per compile and run the rule check.

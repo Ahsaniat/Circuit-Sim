@@ -55,9 +55,11 @@ export function runErc(ir: CircuitIR, netlist: Netlist, unsupported: Set<string>
         }
     }
 
-    // 2. IC power pins not connected to any driven net.
+    // 2. IC power pins not connected to any driven net (built-in DIPs only).
+    const customNames = new Set((ir.customICs ?? []).map(ic => ic.name));
     for (const comp of ir.components) {
         if (comp.category !== 'ic') continue;
+        if (customNames.has(comp.type)) continue;
         const pair = DIP_POWER_PINS[comp.pinCount];
         if (!pair) continue;
         const vccNet = netlist.pinNet.get(`${comp.id}:${pair[0]}`);

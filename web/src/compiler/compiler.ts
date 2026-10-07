@@ -47,6 +47,14 @@ interface ParsedProgram {
     components: CompDecl[];
     boards: BoardDecl[];
     connections: Connection[];
+    customICs: CustomICDef[];
+}
+
+interface CustomICDef {
+    name: string;
+    pins: Array<{ name: string; type: string }>;
+    line: number;
+    column: number;
 }
 
 // Component categories for different rendering and pin layouts
@@ -355,7 +363,8 @@ class Parser {
         const program: ParsedProgram = {
             components: [],
             boards: [],
-            connections: []
+            connections: [],
+            customICs: []
         };
 
         while (!this.isAtEnd()) {
@@ -378,7 +387,7 @@ class Parser {
                 }
                 program.connections = connections;
             } else if (this.match('DEF')) {
-                this.skipICDef();
+                program.customICs.push(this.parseICDef());
             } else {
                 // Strict mode: never silently discard tokens. A stray token is
                 // almost always a typo that must be reported with its location.
@@ -485,15 +494,26 @@ class Parser {
         return { componentId: componentId.lexeme, pinNumber, line: componentId.line, column: componentId.column };
     }
 
-    private skipICDef(): void {
-        this.consume('IDENTIFIER', 'Expected IC name');
-        this.consume('LPAREN', "Expected '('");
-        let depth = 1;
-        while (depth > 0 && !this.isAtEnd()) {
-            if (this.match('LPAREN')) depth++;
-            else if (this.match('RPAREN')) depth--;
-            else this.advance();
+    private parseICDef(): CustomICDef {
+        const nameToken = this.consumeAny(['IDENTIFIER', 'NUMBER'], "Expected IC name after 'def'");
+        this.consume('LPAREN', "Expected '(' after IC name");
+        const pins: Array<{ name: string; type: string }> = [];
+
+        while (!this.check('RPAREN') && !this.isAtEnd()) {
+            const pinName = this.consume('IDENTIFIER', 'Expected pin name');
+            this.consume('ARROW', "Expected '->' after pin name");
+            const typeToken = this.peek();
+            if (typeToken.type === 'KEYWORD' && ['input', 'output', 'gnd', 'vcc'].includes(typeToken.lexeme)) {
+                this.advance();
+                pins.push({ name: pinName.lexeme, type: typeToken.lexeme });
+            } else {
+                throw new CompileError('Expected pin type (input, output, gnd, vcc)', typeToken.line, typeToken.column);
+            }
+            if (!this.match('COMMA')) break;
         }
+
+        this.consume('RPAREN', "Expected ')' to close IC definition");
+        return { name: nameToken.lexeme, pins, line: nameToken.line, column: nameToken.column };
     }
 
     private peek(): Token {
@@ -550,6 +570,9 @@ class IRGenerator {
     
     // Board that owns auto-placed components and wires
     private defaultBoardId: string | null = null;
+
+    // Pin counts for `def` custom ICs
+    private customPinCounts: Map<string, number> = new Map();
     
     // Track next available column for each row group
     private nextAvailableCol: { top: number; bottom: number; straddling: number } = { top: 3, bottom: 3, straddling: 3 };
@@ -569,7 +592,10 @@ class IRGenerator {
         this.symbols.clear();
         this.boardGeometry = null;
         this.defaultBoardId = null;
+        this.customPinCounts = new Map(program.customICs.map(ic => [ic.name, ic.pins.length]));
         this.nextAvailableCol = { top: 3, bottom: 3, straddling: 3 };
+
+        ir.customICs = program.customICs.map(ic => ({ name: ic.name, pins: ic.pins.map(p => ({ ...p })) }));
 
         for (const comp of program.components) {
             this.symbols.set(comp.id, { kind: 'component', type: comp.type, category: comp.category });
@@ -629,7 +655,7 @@ class IRGenerator {
      * rejects unknown types; this guard keeps the invariant explicit.
      */
     private resolvePinCount(comp: CompDecl): number {
-        const pinCount = BUILTIN_ICS[comp.type];
+        const pinCount = BUILTIN_ICS[comp.type] ?? this.customPinCounts.get(comp.type);
         if (pinCount === undefined) {
             throw new CompileError(`Unknown component type: '${comp.type}'`, comp.line, comp.column);
         }
@@ -970,12 +996,26 @@ interface SymbolInfo {
  */
 function validateProgram(program: ParsedProgram): void {
     const symbols = new Map<string, SymbolInfo>();
+    const customICs = new Map<string, number>();
+
+    for (const ic of program.customICs) {
+        if (BUILTIN_ICS[ic.name] !== undefined) {
+            throw new CompileError(`Cannot redefine built-in IC: '${ic.name}'`, ic.line, ic.column);
+        }
+        if (customICs.has(ic.name)) {
+            throw new CompileError(`Duplicate IC definition: '${ic.name}'`, ic.line, ic.column);
+        }
+        if (ic.pins.length === 0) {
+            throw new CompileError(`IC '${ic.name}' must define at least one pin`, ic.line, ic.column);
+        }
+        customICs.set(ic.name, ic.pins.length);
+    }
 
     for (const comp of program.components) {
         if (symbols.has(comp.id)) {
             throw new CompileError(`Duplicate component declaration: '${comp.id}'`, comp.line, comp.column);
         }
-        const pinCount = BUILTIN_ICS[comp.type];
+        const pinCount = BUILTIN_ICS[comp.type] ?? customICs.get(comp.type);
         if (pinCount === undefined) {
             throw new CompileError(`Unknown component type: '${comp.type}'`, comp.line, comp.column);
         }

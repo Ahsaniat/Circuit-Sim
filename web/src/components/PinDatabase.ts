@@ -175,8 +175,27 @@ export const IC_PINS: Record<string, Record<number, PinInfo>> = {
     },
 };
 
+const CUSTOM_IC_PINS = new Map<string, Record<number, PinInfo>>();
+
+/** Register pins from a `def` declaration so tooltips/ERC know them. */
+export function registerCustomIC(name: string, pins: Array<{ name: string; type: string }>): void {
+    const map: Record<number, PinInfo> = {};
+    const dirFor = (type: string): PinDirection => {
+        switch (type) {
+            case 'input': return 'input';
+            case 'output': return 'output';
+            case 'gnd': return 'ground';
+            default: return 'power';
+        }
+    };
+    pins.forEach((pin, index) => {
+        map[index + 1] = { fn: pin.name, dir: dirFor(pin.type) };
+    });
+    CUSTOM_IC_PINS.set(name, map);
+}
+
 export function pinInfo(type: string, pin: number): PinInfo | undefined {
-    return IC_PINS[type]?.[pin];
+    return CUSTOM_IC_PINS.get(type)?.[pin] ?? IC_PINS[type]?.[pin];
 }
 
 export function pinFunction(type: string, pin: number): string | undefined {
@@ -184,12 +203,12 @@ export function pinFunction(type: string, pin: number): string | undefined {
 }
 
 export function componentSummary(type: string): string | undefined {
-    return IC_SUMMARIES[type];
+    return CUSTOM_IC_PINS.has(type) ? 'Custom IC' : IC_SUMMARIES[type];
 }
 
 /** Pins that drive the net (for contention checks). */
 export function outputPins(type: string): number[] {
-    const pins = IC_PINS[type];
+    const pins = CUSTOM_IC_PINS.get(type) ?? IC_PINS[type];
     if (!pins) return [];
     return Object.entries(pins)
         .filter(([, info]) => info.dir === 'output')

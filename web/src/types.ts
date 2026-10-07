@@ -44,10 +44,16 @@ export interface BoardIR {
     size: { width: number; height: number };
 }
 
+export interface CustomICIR {
+    name: string;
+    pins: Array<{ name: string; type: string }>;
+}
+
 export interface CircuitIR {
     width: number;
     height: number;
     components: ComponentIR[];
     boards: BoardIR[];
     wires: Wire[];
+    customICs?: CustomICIR[];
 }
