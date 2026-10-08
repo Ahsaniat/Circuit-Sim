@@ -18,7 +18,7 @@
 
 **Catch mistakes early.** The ERC flags shorted nets, disconnected IC power pins, LEDs without series resistors, floating parts, output contention and missing power sources, right under the editor.
 
-**Work visually.** Drag components and wires; they snap to holes with magnetic feedback. Undo/redo, autosave, fit-to-view, panning and touch gestures are all built in.
+**Work visually.** Drag components and wires; they snap to holes with magnetic feedback. Press `R` to rotate a part (its pins stay on holes and attached wires follow), click switches and buttons while simulating to press them, and rely on undo/redo, autosave, fit-to-view, panning and touch gestures.
 
 **Share and export.** Full-circuit PNG, vector SVG, a grouped BOM as CSV, and permalinks that encode the whole circuit in the URL.
 
