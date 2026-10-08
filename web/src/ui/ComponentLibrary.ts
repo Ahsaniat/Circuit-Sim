@@ -264,6 +264,8 @@ export class ComponentLibrary {
 
         const search = document.createElement('input');
         search.type = 'search';
+        search.id = 'component-search';
+        search.name = 'component-search';
         search.className = 'comp-lib-search';
         search.placeholder = 'Search…';
         search.setAttribute('aria-label', 'Search components');
