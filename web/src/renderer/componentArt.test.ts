@@ -91,6 +91,24 @@ describe('computeArtTransform', () => {
         }
     });
 
+    it('never explodes at 270 degrees, even with skewed hole positions', () => {
+        // Regression: rotating the battery to 270 degrees and dragging it
+        // near the power rail produced a scale of ~1e14 because rotated
+        // trig spans are not exactly zero.
+        const holes = [{ x: 617.44, y: 6 }, { x: 616.06, y: 0.57 }];
+        const transform = computeArtTransform(COMPONENT_ART.BATTERY, holes, 270);
+        expect(transform).not.toBeNull();
+        expect(transform!.scaleX).toBeGreaterThan(0);
+        expect(transform!.scaleX).toBeLessThan(1);
+        expect(Number.isFinite(transform!.translateX)).toBe(true);
+        expect(Number.isFinite(transform!.translateY)).toBe(true);
+    });
+
+    it('returns null when the two holes are the same point', () => {
+        const holes = [{ x: 5, y: 5 }, { x: 5, y: 5 }];
+        expect(computeArtTransform(COMPONENT_ART.RES, holes, 0)).toBeNull();
+    });
+
     it('returns null when a required pin or hole is missing', () => {
         const art = COMPONENT_ART.RES;
         expect(computeArtTransform(art, [])).toBeNull();

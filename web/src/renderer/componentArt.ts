@@ -376,16 +376,39 @@ export function computeArtTransform(
         scaleX = holeW / svgW;
         scaleY = holeH / svgH;
     } else {
-        let uniform = 0;
-        if (svgW > 0 && holeW > 0) {
-            uniform = holeW / svgW;
-        } else if (svgH > 0 && holeH > 0) {
-            uniform = holeH / svgH;
-        } else {
-            return null;
+        // Uniform scale from the two most distant mapped pins. Distances are
+        // rotation-invariant: rotated spans computed with trig are not
+        // exactly zero at 90/270 degrees, which would otherwise divide by
+        // ~1e-14 and draw the artwork at an astronomical scale.
+        let maxPinDistance = 0;
+        let maxHoleDistance = 0;
+        for (let i = 0; i < art.pins.length; i++) {
+            for (let j = i + 1; j < art.pins.length; j++) {
+                const hi = holes[i];
+                const hj = holes[j];
+                if (!hi || !hj) continue;
+                const pinDistance = Math.hypot(
+                    art.pins[j].x - art.pins[i].x,
+                    art.pins[j].y - art.pins[i].y
+                );
+                if (pinDistance > maxPinDistance) {
+                    maxPinDistance = pinDistance;
+                    maxHoleDistance = Math.hypot(hj.x - hi.x, hj.y - hi.y);
+                }
+            }
         }
+        if (maxPinDistance < 1e-6 || maxHoleDistance < 1e-6) return null;
+        const uniform = maxHoleDistance / maxPinDistance;
         scaleX = uniform;
         scaleY = uniform;
+    }
+
+    // Never return a transform that could flood the canvas.
+    if (
+        !Number.isFinite(scaleX) || !Number.isFinite(scaleY) ||
+        scaleX <= 1e-9 || scaleY <= 1e-9
+    ) {
+        return null;
     }
 
     const rotated = rotatePoint(p1);

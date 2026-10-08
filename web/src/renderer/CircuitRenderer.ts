@@ -93,6 +93,7 @@ export class CircuitRenderer {
     // Interaction state
     private draggables: DraggableElement[] = [];
     private selectedId: string | null = null;
+    private dragElementType: string | null = null;
     private isDragging = false;
     private dragOffset = { x: 0, y: 0 };
 
@@ -386,6 +387,7 @@ export class CircuitRenderer {
         
         if (element) {
             this.selectedId = element.id;
+            this.dragElementType = element.type;
             this.isDragging = true;
             // Snapshot before mutation so a drag can be undone as one action.
             this.dragSnapshot = this.cloneIR();
@@ -748,12 +750,19 @@ export class CircuitRenderer {
         if (this.isDragging) {
             // Rebuild occupancy map after drag completes
             this.rebuildOccupancy();
+            // A dropped component takes its wires with it, so a dragged part
+            // stays electrically connected instead of leaving wires behind.
+            if (this.dragElementType === 'component' && this.selectedId) {
+                this.reattachComponentWires(this.selectedId);
+                this.rebuildOccupancy();
+            }
             this.snapPreviewHoles = [];
             this.snapPreviewCollision = false;
             this.isSnapped = false;
             this.redraw();
             this.commitHistory();
         }
+        this.dragElementType = null;
 
         // A click without movement on a switch toggles it while simulating.
         if (this.simResult && this.selectedId) {
@@ -1251,6 +1260,62 @@ export class CircuitRenderer {
         }
         return false;
     }
+
+    /**
+     * Move a component's wire endpoints onto free holes near its (possibly
+     * new) pin positions, so a dropped component stays electrically
+     * connected instead of leaving its wires behind.
+     */
+    private reattachComponentWires(componentId: string): void {
+        if (!this.circuitIR) return;
+        const comp = this.circuitIR.components.find(c => c.id === componentId);
+        if (!comp) return;
+        const geo = this.geometryFor(comp.boardId);
+        const snapMgr = this.snapManagerFor(comp.boardId);
+        if (!geo) return;
+
+        const topRows = ['D', 'C', 'B', 'A'];
+        const bottomRows = ['G', 'H', 'I', 'J'];
+
+        const findFreeHole = (pin: number): { x: number; y: number } | null => {
+            const hole = componentPinHole(comp, pin, geo);
+            if (!hole) return null; // off-board: leave the wire where it is
+            if (snapMgr) {
+                const isTopHalf = BreadboardGeometry.TOP_ROWS.includes(hole.row);
+                const rows = isTopHalf ? topRows : bottomRows;
+                for (const row of rows) {
+                    const occupants = snapMgr.getHoleOccupancy(hole.col, row)
+                        .filter(o => !o.componentId.startsWith('wire_'));
+                    if (occupants.length === 0) {
+                        const pos = geo.getHolePosition(hole.col, row);
+                        return { x: pos.x, y: pos.y };
+                    }
+                }
+            }
+            return { x: hole.x, y: hole.y };
+        };
+
+        for (const wire of this.circuitIR.wires) {
+            let moved = false;
+            if (wire.from.component === componentId) {
+                const pos = findFreeHole(wire.from.pin);
+                if (pos) {
+                    wire.from.x = pos.x;
+                    wire.from.y = pos.y;
+                    moved = true;
+                }
+            }
+            if (wire.to.component === componentId) {
+                const pos = findFreeHole(wire.to.pin);
+                if (pos) {
+                    wire.to.x = pos.x;
+                    wire.to.y = pos.y;
+                    moved = true;
+                }
+            }
+            if (moved) wire.waypoints = undefined;
+        }
+    }
     
     /**
      * Get component dimensions based on category using the unified footprint system
@@ -1688,9 +1753,15 @@ export class CircuitRenderer {
         if (!geo) return null;
 
         const intended = componentPinPositions(comp, geo);
+        // Use snapped holes only when every pin has one; a mix of snapped
+        // holes and intended positions would skew the artwork.
+        const snapped = Array.from({ length: comp.pinCount }, (_, index) =>
+            componentPinHole(comp, index + 1, geo)
+        );
+        const allSnapped = snapped.every(hole => hole !== null);
         const holeList = Array.from({ length: comp.pinCount }, (_, index) => {
-            const hole = componentPinHole(comp, index + 1, geo) ?? intended.get(index + 1);
-            return hole ? { x: hole.x * BASE_SCALE, y: hole.y * BASE_SCALE } : undefined;
+            const point = allSnapped ? snapped[index] : intended.get(index + 1);
+            return point ? { x: point.x * BASE_SCALE, y: point.y * BASE_SCALE } : undefined;
         });
         const transform = computeArtTransform(art, holeList, comp.rotation ?? 0);
         if (!transform) return null;
@@ -1729,6 +1800,8 @@ export class CircuitRenderer {
         const placement = this.getArtPlacement(comp);
         if (!placement) return false;
         const { transform, minX, minY, maxX, maxY } = placement;
+        // Defense in depth: never draw artwork at an absurd size.
+        if (maxX - minX > 5000 || maxY - minY > 5000) return false;
 
         const cos = Math.cos(transform.rotate);
         const sin = Math.sin(transform.rotate);
