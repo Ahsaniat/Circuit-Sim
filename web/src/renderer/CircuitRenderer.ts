@@ -7,8 +7,8 @@ import { buildSvg } from '../export/SvgExporter';
 import { translateBoardElements } from './boardMove';
 import { cornerRadius, wirePoints } from './wirePath';
 import { resistorBandColors } from './resistorBands';
-import { artFor, ComponentArt, computeArtTransform } from './componentArt';
-import { componentPinHole, componentPinHoles } from '../geometry/PinGeometry';
+import { artFor, ArtTransform, ComponentArt, computeArtTransform } from './componentArt';
+import { componentPinHole, componentPinPositions } from '../geometry/PinGeometry';
 import { planRotation, rotateOffset } from '../geometry/rotation';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
@@ -105,6 +105,7 @@ export class CircuitRenderer {
     
     // Snap preview state
     private snapPreviewHoles: HolePosition[] = [];
+    private snapPreviewCollision = false;
     private isSnapped = false;
     
     // Zoom and pan state
@@ -178,6 +179,13 @@ export class CircuitRenderer {
 
         window.addEventListener('keydown', this.onKeyDown.bind(this));
         window.addEventListener('keyup', this.onKeyUp.bind(this));
+
+        // Track panel size changes (window resize, split-pane drag) so the
+        // canvas never leaves an uncovered strip next to the breadboard.
+        const parent = this.canvas.parentElement;
+        if (parent && typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(() => this.resize()).observe(parent);
+        }
     }
 
     /** Convert a screen-pixel distance to base units at the current zoom. */
@@ -444,6 +452,7 @@ export class CircuitRenderer {
         if (this.isDragging && e.buttons === 0) {
             this.isDragging = false;
             this.snapPreviewHoles = [];
+            this.snapPreviewCollision = false;
             this.isSnapped = false;
             this.canvas.style.cursor = 'default';
             this.rebuildOccupancy();
@@ -591,17 +600,22 @@ export class CircuitRenderer {
                             
                             comp.position.x = snapResult.bodyX;
                             comp.position.y = snapResult.bodyY;
-                            this.isSnapped = snapResult.snapped;
+                            const collides = snapResult.snapped && this.hasPinCollision(comp, geo);
+                            if (collides) {
+                                // Never snap onto holes that are already occupied.
+                                comp.position.x = newBaseX;
+                                comp.position.y = newBaseY;
+                            }
+                            this.isSnapped = snapResult.snapped && !collides;
+                            this.snapPreviewCollision = collides;
                             
                             // Show snap preview for all IC pins
-                            if (snapResult.snapped && snapResult.snapCol) {
-                                this.snapPreviewHoles = [];
+                            this.snapPreviewHoles = [];
+                            if (snapResult.snapped) {
                                 for (let pin = 1; pin <= comp.pinCount; pin++) {
                                     const hole = componentPinHole(comp, pin, geo);
                                     if (hole) this.snapPreviewHoles.push(hole);
                                 }
-                            } else {
-                                this.snapPreviewHoles = [];
                             }
                         } else {
                             // Non-IC component - snap by first pin (rotation-aware)
@@ -621,7 +635,14 @@ export class CircuitRenderer {
                             
                             comp.position.x = snapResult.bodyX;
                             comp.position.y = snapResult.bodyY;
-                            this.isSnapped = snapResult.snapped;
+                            const collides = snapResult.snapped && this.hasPinCollision(comp, geo);
+                            if (collides) {
+                                // Never snap onto holes that are already occupied.
+                                comp.position.x = newBaseX;
+                                comp.position.y = newBaseY;
+                            }
+                            this.isSnapped = snapResult.snapped && !collides;
+                            this.snapPreviewCollision = collides;
                             
                             // Show snap preview from the actual rotated pin holes
                             this.snapPreviewHoles = [];
@@ -642,6 +663,7 @@ export class CircuitRenderer {
             // Not dragging - handle hover and tooltip
             const element = this.findElementAt(pos);
             this.snapPreviewHoles = [];
+            this.snapPreviewCollision = false;
             this.isSnapped = false;
 
             // Net highlighting: hovering a wire lights up its whole net.
@@ -727,6 +749,7 @@ export class CircuitRenderer {
             // Rebuild occupancy map after drag completes
             this.rebuildOccupancy();
             this.snapPreviewHoles = [];
+            this.snapPreviewCollision = false;
             this.isSnapped = false;
             this.redraw();
             this.commitHistory();
@@ -898,12 +921,14 @@ export class CircuitRenderer {
         if (!parent) return;
         
         const dpr = window.devicePixelRatio || 1;
-        const rect = parent.getBoundingClientRect();
+        // clientWidth/Height track the panel exactly (border-box excluded),
+        // so the canvas always fills it after window or split-pane changes.
+        const width = parent.clientWidth;
+        const height = parent.clientHeight;
+        if (width <= 0 || height <= 0) return;
         
-        this.canvas.width = rect.width * dpr;
-        this.canvas.height = rect.height * dpr;
-        this.canvas.style.width = `${rect.width}px`;
-        this.canvas.style.height = `${rect.height}px`;
+        this.canvas.width = Math.round(width * dpr);
+        this.canvas.height = Math.round(height * dpr);
         
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.scale(dpr, dpr);
@@ -1137,6 +1162,23 @@ export class CircuitRenderer {
         
         // Add components (rendered on top, checked first)
         for (const comp of this.circuitIR.components) {
+            // Artwork components use the artwork's own bounds as the hit box,
+            // so the whole part can be clicked and dragged.
+            const artPlacement = this.getArtPlacement(comp);
+            if (artPlacement) {
+                const pad = 2;
+                this.draggables.push({
+                    id: comp.id,
+                    type: 'component',
+                    x: artPlacement.minX / BASE_SCALE - pad,
+                    y: artPlacement.minY / BASE_SCALE - pad,
+                    width: (artPlacement.maxX - artPlacement.minX) / BASE_SCALE + pad * 2,
+                    height: (artPlacement.maxY - artPlacement.minY) / BASE_SCALE + pad * 2,
+                    parentBoardId: this.boardIdOf(comp.boardId)
+                });
+                continue;
+            }
+
             const { width, height } = this.getComponentDimensions(comp);
             const rotated = (comp.rotation ?? 0) % 180 !== 0;
             const w = rotated ? height : width;
@@ -1194,6 +1236,20 @@ export class CircuitRenderer {
     private geometryFor(boardId: string | undefined): BreadboardGeometry | undefined {
         const resolved = this.boardIdOf(boardId);
         return resolved ? this.boardGeometries.get(resolved) : undefined;
+    }
+
+    /** True when any of the component's pins would land on an occupied hole. */
+    private hasPinCollision(comp: ComponentIR, geo: BreadboardGeometry): boolean {
+        const snapMgr = this.snapManagerFor(comp.boardId);
+        if (!snapMgr) return false;
+        for (let pin = 1; pin <= comp.pinCount; pin++) {
+            const hole = componentPinHole(comp, pin, geo);
+            if (!hole) continue;
+            const occupants = snapMgr.getHoleOccupancy(hole.col, hole.row)
+                .filter(o => o.componentId !== comp.id);
+            if (occupants.length > 0) return true;
+        }
+        return false;
     }
     
     /**
@@ -1309,16 +1365,20 @@ export class CircuitRenderer {
             const x = hole.x * S;
             const y = hole.y * S;
             
-            // Green highlight ring around snap target hole
-            this.ctx.strokeStyle = this.isSnapped ? '#00cc00' : '#ffcc00';
+            // Green when the position is valid, red when it would land on
+            // holes that are already occupied.
+            const ringColor = this.snapPreviewCollision ? '#e53935' : this.isSnapped ? '#00cc00' : '#ffcc00';
+            this.ctx.strokeStyle = ringColor;
             this.ctx.lineWidth = 2;
             this.ctx.beginPath();
             this.ctx.arc(x, y, 4, 0, Math.PI * 2);
             this.ctx.stroke();
             
             // Filled center if snapped
-            if (this.isSnapped) {
-                this.ctx.fillStyle = 'rgba(0, 204, 0, 0.3)';
+            if (this.isSnapped || this.snapPreviewCollision) {
+                this.ctx.fillStyle = this.snapPreviewCollision
+                    ? 'rgba(229, 57, 53, 0.3)'
+                    : 'rgba(0, 204, 0, 0.3)';
                 this.ctx.beginPath();
                 this.ctx.arc(x, y, 4, 0, Math.PI * 2);
                 this.ctx.fill();
@@ -1533,7 +1593,7 @@ export class CircuitRenderer {
         if (art) {
             const geo = this.geometryFor(comp.boardId);
             const image = this.getArtImage(art.url);
-            if (geo && image && this.renderComponentArt(comp, art, image, geo)) {
+            if (geo && image && this.renderComponentArt(comp, art, image)) {
                 return;
             }
         }
@@ -1611,6 +1671,52 @@ export class CircuitRenderer {
     }
 
     /**
+     * Where a component's artwork sits on the canvas. Uses actual snapped
+     * holes when the part is on the board and intended pin positions when it
+     * has been dragged off, so artwork never falls back to the old renderer.
+     */
+    private getArtPlacement(comp: ComponentIR): {
+        transform: ArtTransform;
+        minX: number;
+        minY: number;
+        maxX: number;
+        maxY: number;
+    } | null {
+        const art = artFor(comp.type);
+        if (!art) return null;
+        const geo = this.geometryFor(comp.boardId);
+        if (!geo) return null;
+
+        const intended = componentPinPositions(comp, geo);
+        const holeList = Array.from({ length: comp.pinCount }, (_, index) => {
+            const hole = componentPinHole(comp, index + 1, geo) ?? intended.get(index + 1);
+            return hole ? { x: hole.x * BASE_SCALE, y: hole.y * BASE_SCALE } : undefined;
+        });
+        const transform = computeArtTransform(art, holeList, comp.rotation ?? 0);
+        if (!transform) return null;
+
+        const cos = Math.cos(transform.rotate);
+        const sin = Math.sin(transform.rotate);
+        const corner = (x: number, y: number) => ({
+            x: transform.translateX + transform.scaleX * (x * cos - y * sin),
+            y: transform.translateY + transform.scaleY * (x * sin + y * cos),
+        });
+        const corners = [
+            corner(0, 0),
+            corner(art.width, 0),
+            corner(art.width, art.height),
+            corner(0, art.height),
+        ];
+        return {
+            transform,
+            minX: Math.min(...corners.map(c => c.x)),
+            maxX: Math.max(...corners.map(c => c.x)),
+            minY: Math.min(...corners.map(c => c.y)),
+            maxY: Math.max(...corners.map(c => c.y)),
+        };
+    }
+
+    /**
      * Draw a component from its SVG artwork, mapped onto its pin holes.
      * Returns false when the artwork cannot be placed (caller falls back to
      * the procedural renderer).
@@ -1618,16 +1724,11 @@ export class CircuitRenderer {
     private renderComponentArt(
         comp: ComponentIR,
         art: ComponentArt,
-        image: HTMLImageElement,
-        geo: BreadboardGeometry
+        image: HTMLImageElement
     ): boolean {
-        const holes = componentPinHoles(comp, geo);
-        const holeList = Array.from({ length: comp.pinCount }, (_, index) => {
-            const hole = holes.get(index + 1);
-            return hole ? { x: hole.x * BASE_SCALE, y: hole.y * BASE_SCALE } : undefined;
-        });
-        const transform = computeArtTransform(art, holeList, comp.rotation ?? 0);
-        if (!transform) return false;
+        const placement = this.getArtPlacement(comp);
+        if (!placement) return false;
+        const { transform, minX, minY, maxX, maxY } = placement;
 
         const cos = Math.cos(transform.rotate);
         const sin = Math.sin(transform.rotate);
@@ -1635,18 +1736,6 @@ export class CircuitRenderer {
             x: transform.translateX + transform.scaleX * (x * cos - y * sin),
             y: transform.translateY + transform.scaleY * (x * sin + y * cos),
         });
-
-        // Artwork bounding box in canvas units.
-        const corners = [
-            apply(0, 0),
-            apply(art.width, 0),
-            apply(art.width, art.height),
-            apply(0, art.height),
-        ];
-        const minX = Math.min(...corners.map(c => c.x));
-        const maxX = Math.max(...corners.map(c => c.x));
-        const minY = Math.min(...corners.map(c => c.y));
-        const maxY = Math.max(...corners.map(c => c.y));
 
         // The artwork itself, with a shadow that follows its silhouette
         // (no background panel behind transparent areas).

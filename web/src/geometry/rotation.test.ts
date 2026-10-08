@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compile } from '../compiler/compiler';
 import { BreadboardGeometry } from './BreadboardGeometry';
-import { componentPinHole } from './PinGeometry';
+import { componentPinHole, componentPinPositions } from './PinGeometry';
 import { normalizeRotation, pinsAligned, planRotation } from './rotation';
 
 function setup(source: string) {
@@ -15,6 +15,29 @@ describe('normalizeRotation', () => {
         expect(normalizeRotation(-90)).toBe(270);
         expect(normalizeRotation(450)).toBe(90);
         expect(normalizeRotation(0)).toBe(0);
+    });
+});
+
+describe('componentPinPositions', () => {
+    it('returns intended positions even when the part is off the board', () => {
+        const { ir, geo } = setup(`@resistor R1 330\n@board B1 breadboard_830\n`);
+        const comp = ir.components[0];
+        comp.position = { x: -50, y: -50 };
+        const positions = componentPinPositions(comp, geo);
+        expect(positions.size).toBe(2);
+        // Resistor footprint: pin 1 at (0, 1), pin 2 at (5.08, 1).
+        expect(positions.get(1)).toEqual({ x: -50, y: -49 });
+        expect(positions.get(2)!.x).toBeCloseTo(-44.92, 5);
+        expect(positions.get(2)!.y).toBeCloseTo(-49, 5);
+    });
+
+    it('keeps artwork placable after the part leaves the board', () => {
+        const { ir, geo } = setup(`@battery BAT1 9V\n@board B1 breadboard_830\n`);
+        const comp = ir.components[0];
+        comp.position = { x: 500, y: 500 };
+        const positions = componentPinPositions(comp, geo);
+        expect(positions.size).toBe(2);
+        expect(positions.get(1)!.x).toBeCloseTo(500.73, 5);
     });
 });
 

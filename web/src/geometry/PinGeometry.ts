@@ -69,3 +69,36 @@ export function componentPinHoles(
     }
     return holes;
 }
+
+/**
+ * Intended pin positions in base units. Unlike componentPinHole these are
+ * defined even when the component has been dragged off the board, so the
+ * renderer can keep drawing its artwork anywhere.
+ */
+export function componentPinPositions(
+    comp: ComponentIR,
+    geo: BreadboardGeometry
+): Map<number, { x: number; y: number }> {
+    const footprint = getComponentFootprint(comp.category ?? 'ic', comp.pinCount, comp.type);
+    const rotation = normalizeRotation(comp.rotation ?? 0);
+    const positions = new Map<number, { x: number; y: number }>();
+
+    if (footprint.straddlesChannel) {
+        const startCol = geo.getICStartColumn(comp.position.x);
+        for (const pin of footprint.pins) {
+            const sameRow = footprint.pins.filter(p => p.targetRow === pin.targetRow);
+            const index = sameRow.indexOf(pin);
+            if (index < 0) continue;
+            const hole = geo.getHolePosition(startCol + index, pin.targetRow);
+            positions.set(pin.number, { x: hole.x, y: hole.y });
+        }
+        return positions;
+    }
+
+    const center = { x: footprint.bodyWidth / 2, y: footprint.bodyHeight / 2 };
+    for (const pin of footprint.pins) {
+        const offset = rotateOffset({ x: pin.offsetX, y: pin.offsetY }, center, rotation);
+        positions.set(pin.number, { x: comp.position.x + offset.x, y: comp.position.y + offset.y });
+    }
+    return positions;
+}

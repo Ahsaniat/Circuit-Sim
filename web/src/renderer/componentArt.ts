@@ -151,12 +151,12 @@ export const COMPONENT_ART: Record<string, ComponentArt> = {
     },
     BATTERY: {
         url: batteryUrl,
-        width: 484,
-        height: 226,
-        // Local coordinates (viewBox origin is 336,270)
-        pins: [{ x: 106.8, y: 63.5 }, { x: 106.8, y: 157.3 }],
-        rotate: -90,
-        scaleFrom: 'y',
+        width: 226,
+        height: 484,
+        // Upright battery; pin 1 is '+' and pin 2 is '−' at the polarity marks.
+        pins: [{ x: 68.7, y: 106.8 }, { x: 162.5, y: 106.8 }],
+        rotate: 0,
+        scaleFrom: 'x',
     },
     DC: {
         url: motorUrl,
