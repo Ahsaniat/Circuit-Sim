@@ -5,6 +5,7 @@ import { SnapManager } from '../geometry/SnapManager';
 import { CircuitHistory } from '../history/CircuitHistory';
 import { buildSvg } from '../export/SvgExporter';
 import { translateBoardElements } from './boardMove';
+import { cornerRadius, wirePoints } from './wirePath';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
 import { componentSummary } from '../components/PinDatabase';
@@ -56,10 +57,8 @@ interface RenderPalette {
     canvasBg: string;
     boardBg: string;
     boardEdge: string;
-    boardRail: string;
     boardChannel: string;
     boardHole: string;
-    boardLabel: string;
     pin: string;
     componentLabel: string;
     selection: string;
@@ -67,12 +66,10 @@ interface RenderPalette {
 
 const DEFAULT_PALETTE: RenderPalette = {
     canvasBg: '#f5f5f5',
-    boardBg: '#e8e4df',
-    boardEdge: '#bbb',
-    boardRail: '#f0ebe6',
-    boardChannel: '#c8c4bf',
+    boardBg: '#e8eaec',
+    boardEdge: '#cfd3d8',
+    boardChannel: '#d4d7db',
     boardHole: '#222',
-    boardLabel: '#888',
     pin: '#888',
     componentLabel: '#666',
     selection: '#0066cc',
@@ -996,10 +993,8 @@ export class CircuitRenderer {
             canvasBg: read('--canvas-bg', DEFAULT_PALETTE.canvasBg),
             boardBg: read('--breadboard-bg', DEFAULT_PALETTE.boardBg),
             boardEdge: read('--board-edge', DEFAULT_PALETTE.boardEdge),
-            boardRail: read('--board-rail', DEFAULT_PALETTE.boardRail),
             boardChannel: read('--board-channel', DEFAULT_PALETTE.boardChannel),
             boardHole: read('--board-hole', DEFAULT_PALETTE.boardHole),
-            boardLabel: read('--board-label', DEFAULT_PALETTE.boardLabel),
             pin: read('--pin-color', DEFAULT_PALETTE.pin),
             componentLabel: read('--component-label', DEFAULT_PALETTE.componentLabel),
             selection: read('--accent', DEFAULT_PALETTE.selection),
@@ -1337,7 +1332,6 @@ export class CircuitRenderer {
         const h = geo.height * S;
         const holeSpacing = BreadboardGeometry.HOLE_SPACING * S;
         const numCols = BreadboardGeometry.NUM_COLS;
-        const railHeight = BreadboardGeometry.RAIL_HEIGHT * S;
         const channelHeight = BreadboardGeometry.CHANNEL_HEIGHT * S;
         
         // Selection highlight for board
@@ -1358,52 +1352,76 @@ export class CircuitRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Top power rail — rail band is the top RAIL_HEIGHT units of the board
-        const topRailY = y;
+        // Top power rail: red (+) and blue (−) bus lines through the holes
         const holesStartX = geo.holesStartX * S;
-        this.ctx.fillStyle = this.palette.boardRail;
-        this.ctx.fillRect(x + 6, topRailY, w - 12, railHeight);
-
-        // Rail holes and labels are derived from geometry so drawing and
-        // snapping can never disagree.
         const topPlusHole = geo.getHolePosition(1, 'TOP+');
         const topMinusHole = geo.getHolePosition(1, 'TOP-');
+        const railEndX = geo.getHolePosition(numCols, 'TOP+').x * S;
+
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.strokeStyle = '#d9534f';
+        this.ctx.beginPath();
+        this.ctx.moveTo(holesStartX, topPlusHole.y * S);
+        this.ctx.lineTo(railEndX, topPlusHole.y * S);
+        this.ctx.stroke();
+        this.ctx.strokeStyle = '#4a7fd4';
+        this.ctx.beginPath();
+        this.ctx.moveTo(holesStartX, topMinusHole.y * S);
+        this.ctx.lineTo(railEndX, topMinusHole.y * S);
+        this.ctx.stroke();
+
+        // Rail labels at both ends
         this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
-        this.ctx.textAlign = 'left';
-        this.ctx.fillStyle = '#c44';
-        this.ctx.fillText('+', x + 8, topPlusHole.y * S + 3);
-        this.ctx.fillStyle = '#44c';
-        this.ctx.fillText('−', x + 8, topMinusHole.y * S + 3);
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = '#d9534f';
+        this.ctx.fillText('+', holesStartX - 7, topPlusHole.y * S + 3);
+        this.ctx.fillText('+', railEndX + 7, topPlusHole.y * S + 3);
+        this.ctx.fillStyle = '#4a7fd4';
+        this.ctx.fillText('−', holesStartX - 7, topMinusHole.y * S + 3);
+        this.ctx.fillText('−', railEndX + 7, topMinusHole.y * S + 3);
 
         this.ctx.fillStyle = this.palette.boardHole;
         for (let col = 1; col <= numCols; col++) {
             for (const row of ['TOP+', 'TOP-']) {
                 const hole = geo.getHolePosition(col, row);
                 this.ctx.beginPath();
-                this.ctx.arc(hole.x * S, hole.y * S, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(hole.x * S, hole.y * S, 1.25, 0, Math.PI * 2);
                 this.ctx.fill();
             }
         }
 
-        // Bottom power rail — rail band is the bottom RAIL_HEIGHT units
-        const bottomRailY = y + h - railHeight;
-        this.ctx.fillStyle = this.palette.boardRail;
-        this.ctx.fillRect(x + 6, bottomRailY, w - 12, railHeight);
-
+        // Bottom power rail
         const bottomPlusHole = geo.getHolePosition(1, 'BOTTOM+');
         const bottomMinusHole = geo.getHolePosition(1, 'BOTTOM-');
+        const bottomRailEndX = geo.getHolePosition(numCols, 'BOTTOM+').x * S;
+
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.strokeStyle = '#d9534f';
+        this.ctx.beginPath();
+        this.ctx.moveTo(holesStartX, bottomPlusHole.y * S);
+        this.ctx.lineTo(bottomRailEndX, bottomPlusHole.y * S);
+        this.ctx.stroke();
+        this.ctx.strokeStyle = '#4a7fd4';
+        this.ctx.beginPath();
+        this.ctx.moveTo(holesStartX, bottomMinusHole.y * S);
+        this.ctx.lineTo(bottomRailEndX, bottomMinusHole.y * S);
+        this.ctx.stroke();
+
         this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
-        this.ctx.fillStyle = '#c44';
-        this.ctx.fillText('+', x + 8, bottomPlusHole.y * S + 3);
-        this.ctx.fillStyle = '#44c';
-        this.ctx.fillText('−', x + 8, bottomMinusHole.y * S + 3);
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = '#d9534f';
+        this.ctx.fillText('+', holesStartX - 7, bottomPlusHole.y * S + 3);
+        this.ctx.fillText('+', bottomRailEndX + 7, bottomPlusHole.y * S + 3);
+        this.ctx.fillStyle = '#4a7fd4';
+        this.ctx.fillText('−', holesStartX - 7, bottomMinusHole.y * S + 3);
+        this.ctx.fillText('−', bottomRailEndX + 7, bottomMinusHole.y * S + 3);
 
         this.ctx.fillStyle = this.palette.boardHole;
         for (let col = 1; col <= numCols; col++) {
             for (const row of ['BOTTOM+', 'BOTTOM-']) {
                 const hole = geo.getHolePosition(col, row);
                 this.ctx.beginPath();
-                this.ctx.arc(hole.x * S, hole.y * S, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(hole.x * S, hole.y * S, 1.25, 0, Math.PI * 2);
                 this.ctx.fill();
             }
         }
@@ -1422,29 +1440,32 @@ export class CircuitRenderer {
             for (let col = 1; col <= numCols; col++) {
                 const hole = geo.getHolePosition(col, row);
                 this.ctx.beginPath();
-                this.ctx.arc(hole.x * S, hole.y * S, 1.5, 0, Math.PI * 2);
+                this.ctx.arc(hole.x * S, hole.y * S, 1.25, 0, Math.PI * 2);
                 this.ctx.fill();
             }
         }
 
-        // Column numbers
+        // Column numbers above row A and below row J, every 5 columns
         this.ctx.fillStyle = this.palette.pin;
         this.ctx.font = `${8 / this.zoom}px sans-serif`;
         this.ctx.textAlign = 'center';
+        const rowAHole = geo.getHolePosition(1, 'A');
         for (let col = 1; col <= numCols; col += 5) {
             const hx = holesStartX + (col - 1) * holeSpacing;
+            this.ctx.fillText(String(col), hx, rowAHole.y * S - 8);
             this.ctx.fillText(String(col), hx, y + h + 12);
         }
 
-        // Row labels
+        // Row labels on both sides
         this.ctx.textAlign = 'right';
-        for (const row of BreadboardGeometry.TOP_ROWS) {
+        for (const row of BreadboardGeometry.ALL_ROWS) {
             const hole = geo.getHolePosition(1, row);
             this.ctx.fillText(row, x - 4, hole.y * S + 3);
         }
-        for (const row of BreadboardGeometry.BOTTOM_ROWS) {
-            const hole = geo.getHolePosition(1, row);
-            this.ctx.fillText(row, x - 4, hole.y * S + 3);
+        this.ctx.textAlign = 'left';
+        for (const row of BreadboardGeometry.ALL_ROWS) {
+            const hole = geo.getHolePosition(numCols, row);
+            this.ctx.fillText(row, x + w + 4, hole.y * S + 3);
         }
     }
 
@@ -2625,34 +2646,28 @@ export class CircuitRenderer {
 
     private renderWire(wire: Wire, wireIndex?: number): void {
         const S = BASE_SCALE;
-        const fromX = wire.from.x * S;
-        const fromY = wire.from.y * S;
-        const toX = wire.to.x * S;
-        const toY = wire.to.y * S;
+        const points = wirePoints(wire.from, wire.waypoints, wire.to).map(p => ({
+            x: p.x * S,
+            y: p.y * S,
+        }));
+        const from = points[0];
+        const to = points[points.length - 1];
         
         // Check if this wire is selected
         const isSelected = this.selectedId === `wire_${wireIndex}`;
+        const cornerRadiusPx = 6 / this.zoom;
 
         // Selection highlight (draw thicker line behind)
         if (isSelected) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 6 / this.zoom;
+            this.ctx.lineWidth = 7 / this.zoom;
             this.ctx.lineCap = 'round';
             this.ctx.lineJoin = 'round';
             this.ctx.setLineDash([]);
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(fromX, fromY);
-            if (wire.waypoints) {
-                for (const wp of wire.waypoints) {
-                    this.ctx.lineTo(wp.x * S, wp.y * S);
-                }
-            }
-            this.ctx.lineTo(toX, toY);
+            this.traceWirePath(points, cornerRadiusPx);
             this.ctx.stroke();
         }
 
-        // Main wire - increased thickness
         // Simulation overlay: colour wires by net value when active
         let strokeColor = wire.color;
         if (this.simResult && this.simNetlist && wireIndex !== undefined) {
@@ -2663,58 +2678,62 @@ export class CircuitRenderer {
             }
         }
         this.ctx.strokeStyle = strokeColor;
-        this.ctx.lineWidth = 3.5 / this.zoom;  // Increased from 2 to 3.5
+        this.ctx.lineWidth = 4 / this.zoom;
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(fromX, fromY);
-
-        if (wire.waypoints) {
-            for (const wp of wire.waypoints) {
-                this.ctx.lineTo(wp.x * S, wp.y * S);
-            }
-        }
-
-        this.ctx.lineTo(toX, toY);
+        this.traceWirePath(points, cornerRadiusPx);
         this.ctx.stroke();
 
         // Net highlight halo
         const netId = wireIndex !== undefined && this.netlist ? this.netlist.wireNet[wireIndex] : undefined;
         if (netId !== undefined && netId === this.highlightedNetId()) {
             this.ctx.strokeStyle = 'rgba(88, 166, 255, 0.35)';
-            this.ctx.lineWidth = 9 / this.zoom;
-            this.ctx.beginPath();
-            this.ctx.moveTo(fromX, fromY);
-            if (wire.waypoints) {
-                for (const wp of wire.waypoints) {
-                    this.ctx.lineTo(wp.x * S, wp.y * S);
-                }
-            }
-            this.ctx.lineTo(toX, toY);
+            this.ctx.lineWidth = 10 / this.zoom;
+            this.traceWirePath(points, cornerRadiusPx);
             this.ctx.stroke();
         }
 
-        // Connection dots - made larger
-        this.ctx.fillStyle = strokeColor;
-        this.ctx.beginPath();
-        this.ctx.arc(fromX, fromY, 4, 0, Math.PI * 2);  // Increased from 3 to 4
-        this.ctx.fill();
-        this.ctx.beginPath();
-        this.ctx.arc(toX, toY, 4, 0, Math.PI * 2);  // Increased from 3 to 4
-        this.ctx.fill();
+        // Ring terminals, the breadboard-editor convention: a light centre
+        // over the hole with a ring in the wire colour.
+        const ringRadius = 3.4;
+        for (const terminal of [from, to]) {
+            this.ctx.beginPath();
+            this.ctx.arc(terminal.x, terminal.y, ringRadius, 0, Math.PI * 2);
+            this.ctx.fillStyle = '#f5f5f5';
+            this.ctx.fill();
+            this.ctx.strokeStyle = strokeColor;
+            this.ctx.lineWidth = 2.2 / this.zoom;
+            this.ctx.stroke();
+        }
         
         // Selection indicators on terminals
         if (isSelected) {
             this.ctx.strokeStyle = this.palette.selection;
             this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.beginPath();
-            this.ctx.arc(fromX, fromY, 5, 0, Math.PI * 2);
-            this.ctx.stroke();
-            this.ctx.beginPath();
-            this.ctx.arc(toX, toY, 5, 0, Math.PI * 2);
-            this.ctx.stroke();
+            for (const terminal of [from, to]) {
+                this.ctx.beginPath();
+                this.ctx.arc(terminal.x, terminal.y, ringRadius + 2, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
         }
+    }
+
+    /**
+     * Trace an orthogonal polyline with rounded corners.
+     */
+    private traceWirePath(points: Position[], requestedRadius: number): void {
+        this.ctx.beginPath();
+        if (points.length === 0) return;
+        this.ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length - 1; i++) {
+            const radius = cornerRadius(points[i - 1], points[i], points[i + 1], requestedRadius);
+            if (radius <= 0.01) {
+                this.ctx.lineTo(points[i].x, points[i].y);
+            } else {
+                this.ctx.arcTo(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y, radius);
+            }
+        }
+        this.ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
     }
 
     private roundRect(x: number, y: number, w: number, h: number, r: number): void {
