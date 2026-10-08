@@ -1262,7 +1262,7 @@ export class CircuitRenderer {
             
             // Green highlight ring around snap target hole
             this.ctx.strokeStyle = this.isSnapped ? '#00cc00' : '#ffcc00';
-            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.lineWidth = 2;
             this.ctx.beginPath();
             this.ctx.arc(x, y, 4, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -1338,8 +1338,8 @@ export class CircuitRenderer {
         // Selection highlight for board
         if (this.selectedId === board.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 3 / this.zoom;
-            this.ctx.setLineDash([6 / this.zoom, 3 / this.zoom]);
+            this.ctx.lineWidth = 3;
+            this.ctx.setLineDash([6, 3]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 8);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -1348,7 +1348,7 @@ export class CircuitRenderer {
         // Board background
         this.ctx.fillStyle = this.palette.boardBg;
         this.ctx.strokeStyle = this.palette.boardEdge;
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.roundRect(x, y, w, h, 6);
         this.ctx.fill();
         this.ctx.stroke();
@@ -1359,7 +1359,7 @@ export class CircuitRenderer {
         const topMinusHole = geo.getHolePosition(1, 'TOP-');
         const railEndX = geo.getHolePosition(numCols, 'TOP+').x * S;
 
-        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = '#d9534f';
         this.ctx.beginPath();
         this.ctx.moveTo(holesStartX, topPlusHole.y * S);
@@ -1372,7 +1372,7 @@ export class CircuitRenderer {
         this.ctx.stroke();
 
         // Rail labels at both ends
-        this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
+        this.ctx.font = `bold ${10}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.fillStyle = '#d9534f';
         this.ctx.fillText('+', holesStartX - 7, topPlusHole.y * S + 3);
@@ -1396,7 +1396,7 @@ export class CircuitRenderer {
         const bottomMinusHole = geo.getHolePosition(1, 'BOTTOM-');
         const bottomRailEndX = geo.getHolePosition(numCols, 'BOTTOM+').x * S;
 
-        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = '#d9534f';
         this.ctx.beginPath();
         this.ctx.moveTo(holesStartX, bottomPlusHole.y * S);
@@ -1408,7 +1408,7 @@ export class CircuitRenderer {
         this.ctx.lineTo(bottomRailEndX, bottomMinusHole.y * S);
         this.ctx.stroke();
 
-        this.ctx.font = `bold ${10 / this.zoom}px sans-serif`;
+        this.ctx.font = `bold ${10}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.fillStyle = '#d9534f';
         this.ctx.fillText('+', holesStartX - 7, bottomPlusHole.y * S + 3);
@@ -1448,7 +1448,7 @@ export class CircuitRenderer {
 
         // Column numbers above row A and below row J, every 5 columns
         this.ctx.fillStyle = this.palette.pin;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         const rowAHole = geo.getHolePosition(1, 'A');
         for (let col = 1; col <= numCols; col += 5) {
@@ -1529,8 +1529,8 @@ export class CircuitRenderer {
 
         this.ctx.save();
         this.ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-        this.ctx.shadowBlur = 6 / this.zoom;
-        this.ctx.shadowOffsetY = 2.5 / this.zoom;
+        this.ctx.shadowBlur = 6;
+        this.ctx.shadowOffsetY = 2.5;
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.10)';
         this.ctx.beginPath();
         if (category === 'led' || category === 'sensor') {
@@ -1545,7 +1545,7 @@ export class CircuitRenderer {
     /** Metallic component lead. */
     private drawLead(x1: number, y1: number, x2: number, y2: number): void {
         this.ctx.strokeStyle = '#9aa0a6';
-        this.ctx.lineWidth = 2.4 / this.zoom;
+        this.ctx.lineWidth = 2.4;
         this.ctx.lineCap = 'round';
         this.ctx.beginPath();
         this.ctx.moveTo(x1, y1);
@@ -1560,7 +1560,7 @@ export class CircuitRenderer {
         this.ctx.fillStyle = '#cdd1d6';
         this.ctx.fill();
         this.ctx.strokeStyle = '#8a9099';
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.ctx.stroke();
     }
     
@@ -1586,8 +1586,8 @@ export class CircuitRenderer {
         // Selection highlight
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - pinLengthPx - 4, icWidth + 8, icHeight + pinLengthPx * 2 + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -1600,7 +1600,7 @@ export class CircuitRenderer {
         bodyGradient.addColorStop(1, '#111111');
         this.ctx.fillStyle = bodyGradient;
         this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.roundRect(x, y, icWidth, icHeight, 4);
         this.ctx.fill();
         this.ctx.stroke();
@@ -1611,7 +1611,7 @@ export class CircuitRenderer {
         this.ctx.arc(x, y + icHeight / 2, icHeight * 0.22, -Math.PI / 2, Math.PI / 2);
         this.ctx.fill();
         this.ctx.strokeStyle = '#3d3d3d';
-        this.ctx.lineWidth = 0.8 / this.zoom;
+        this.ctx.lineWidth = 0.8;
         this.ctx.stroke();
 
         // Pin 1 dot
@@ -1641,14 +1641,14 @@ export class CircuitRenderer {
 
         // IC label (white marking like a real DIP)
         this.ctx.fillStyle = '#e8e8e8';
-        this.ctx.font = `bold ${9 / this.zoom}px monospace`;
+        this.ctx.font = `bold ${9}px monospace`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(comp.type, x + icWidth / 2, y + icHeight / 2);
         
         // Component ID
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${10 / this.zoom}px sans-serif`;
+        this.ctx.font = `${10}px sans-serif`;
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + icWidth / 2, y + icHeight + pinLengthPx + 4);
     }
@@ -1670,8 +1670,8 @@ export class CircuitRenderer {
         // Selection highlight
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -1701,14 +1701,14 @@ export class CircuitRenderer {
                 gradient.addColorStop(1, '#1d2c4f');
                 this.ctx.fillStyle = gradient;
                 this.ctx.strokeStyle = '#16213b';
-                this.ctx.lineWidth = 1 / this.zoom;
+                this.ctx.lineWidth = 1;
                 this.roundRect(bodyX, y, bodyW, h, h / 3);
                 this.ctx.fill();
                 this.ctx.stroke();
                 this.ctx.fillStyle = '#c9cdd2';
                 this.ctx.fillRect(bodyX + bodyW - 6, y + 1, 4, h - 2);
                 this.ctx.fillStyle = '#2b3f6e';
-                this.ctx.font = `bold ${7 / this.zoom}px sans-serif`;
+                this.ctx.font = `bold ${7}px sans-serif`;
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
                 this.ctx.fillText('−', bodyX + bodyW - 4, centerY);
@@ -1717,7 +1717,7 @@ export class CircuitRenderer {
                 const radius = h * 0.7;
                 this.ctx.fillStyle = '#e08a3c';
                 this.ctx.strokeStyle = '#a85f1e';
-                this.ctx.lineWidth = 1 / this.zoom;
+                this.ctx.lineWidth = 1;
                 this.ctx.beginPath();
                 this.ctx.ellipse(bodyX + bodyW / 2, centerY, radius * 0.8, radius, 0, 0, Math.PI * 2);
                 this.ctx.fill();
@@ -1726,7 +1726,7 @@ export class CircuitRenderer {
         } else if (comp.type === 'IND') {
             // Copper coil
             this.ctx.strokeStyle = '#b87333';
-            this.ctx.lineWidth = 2.4 / this.zoom;
+            this.ctx.lineWidth = 2.4;
             const numLoops = 4;
             const loopWidth = bodyW / numLoops;
             for (let i = 0; i < numLoops; i++) {
@@ -1741,7 +1741,7 @@ export class CircuitRenderer {
             gradient.addColorStop(1, '#2f3f8f');
             this.ctx.fillStyle = gradient;
             this.ctx.strokeStyle = '#1f2a5f';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.roundRect(bodyX, y, bodyW, h, 2);
             this.ctx.fill();
             this.ctx.stroke();
@@ -1759,7 +1759,7 @@ export class CircuitRenderer {
             gradient.addColorStop(1, '#c3a172');
             this.ctx.fillStyle = gradient;
             this.ctx.strokeStyle = '#8b6914';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.roundRect(bodyX, y, bodyW, h, h / 2.6);
             this.ctx.fill();
             this.ctx.stroke();
@@ -1775,7 +1775,7 @@ export class CircuitRenderer {
         
         // Label
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(`${comp.id}${comp.value ? ' ' + comp.value : ''}`, x + w/2, y + h + 4);
@@ -1809,8 +1809,8 @@ export class CircuitRenderer {
         // Selection highlight
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -1836,7 +1836,7 @@ export class CircuitRenderer {
         diodeGradient.addColorStop(1, '#0e0e0e');
         this.ctx.fillStyle = diodeGradient;
         this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.roundRect(bodyX, y, bodyW, h, 2);
         this.ctx.fill();
         this.ctx.stroke();
@@ -1847,7 +1847,7 @@ export class CircuitRenderer {
         
         // Label
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + w/2, y + h + 4);
@@ -1869,8 +1869,8 @@ export class CircuitRenderer {
         // Selection highlight
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.ctx.beginPath();
             this.ctx.arc(x + w/2, y + h/2, w/2 + 4, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -1914,7 +1914,7 @@ export class CircuitRenderer {
         this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.strokeStyle = this.darkenColor(ledColor, 0.6);
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.ctx.stroke();
 
         // Glass highlight
@@ -1934,7 +1934,7 @@ export class CircuitRenderer {
         // Base collar where the dome meets the leads
         this.ctx.fillStyle = '#d8dade';
         this.ctx.strokeStyle = '#9aa0a6';
-        this.ctx.lineWidth = 0.8 / this.zoom;
+        this.ctx.lineWidth = 0.8;
         this.ctx.beginPath();
         this.ctx.rect(centerX - radius * 0.62, y + h - 2.5, radius * 1.24, 2.5);
         this.ctx.fill();
@@ -1942,7 +1942,7 @@ export class CircuitRenderer {
 
         // Flat edge marks the cathode side
         this.ctx.strokeStyle = '#4a4a4a';
-        this.ctx.lineWidth = 1.2 / this.zoom;
+        this.ctx.lineWidth = 1.2;
         this.ctx.beginPath();
         this.ctx.moveTo(centerX + radius * 0.35, y + h - 2);
         this.ctx.lineTo(centerX + radius - 1, y + h - 2);
@@ -1968,13 +1968,13 @@ export class CircuitRenderer {
         
         // Anode/Cathode labels
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${6 / this.zoom}px sans-serif`;
+        this.ctx.font = `${6}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.fillText('A', pin1X, pinY + 8);
         this.ctx.fillText('K', pin2X, pinY + 8);
         
         // Component ID
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, centerX, pinY + 14);
     }
@@ -1995,8 +1995,8 @@ export class CircuitRenderer {
         // Selection highlight
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.ctx.beginPath();
             this.ctx.arc(x + w/2, y + h/2, w/2 + 4, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -2026,7 +2026,7 @@ export class CircuitRenderer {
             
             // Zigzag pattern (light-sensitive element)
             this.ctx.strokeStyle = '#ffd700';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.ctx.beginPath();
             const zigzags = 5;
             const zigWidth = w * 0.6 / zigzags;
@@ -2046,7 +2046,7 @@ export class CircuitRenderer {
             
             // Light arrows pointing at sensor
             this.ctx.strokeStyle = '#ff0';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             for (let i = -1; i <= 1; i++) {
                 const arrowX = x - 4;
                 const arrowY = centerY + i * 4;
@@ -2062,20 +2062,20 @@ export class CircuitRenderer {
         
         // Outline
         this.ctx.strokeStyle = this.palette.componentLabel;
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.ctx.beginPath();
         this.ctx.arc(centerX, centerY, w/2, 0, Math.PI * 2);
         this.ctx.stroke();
         
         // Pin labels
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${6 / this.zoom}px sans-serif`;
+        this.ctx.font = `${6}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.fillText('1', pin1X, pinY + 8);
         this.ctx.fillText('2', pin2X, pinY + 8);
         
         // Component ID
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, centerX, pinY + 14);
     }
@@ -2096,8 +2096,8 @@ export class CircuitRenderer {
         // Selection highlight
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - 4, w + 8, h + 2*S + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -2128,7 +2128,7 @@ export class CircuitRenderer {
         
         // Outline and flat-face edge
         this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.ctx.stroke();
         this.ctx.strokeStyle = '#454545';
         this.ctx.beginPath();
@@ -2145,14 +2145,14 @@ export class CircuitRenderer {
         
         // Type label on body (white marking)
         this.ctx.fillStyle = '#d8d8d8';
-        this.ctx.font = `${7 / this.zoom}px sans-serif`;
+        this.ctx.font = `${7}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(comp.type, centerX, y + h * 0.6);
         
         // Pin labels
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${6 / this.zoom}px sans-serif`;
+        this.ctx.font = `${6}px sans-serif`;
         const isMOSFET = comp.type === 'NMOS' || comp.type === 'PMOS';
         const pinLabels = isMOSFET ? ['S', 'G', 'D'] : ['E', 'B', 'C'];
         for (let i = 0; i < 3; i++) {
@@ -2160,7 +2160,7 @@ export class CircuitRenderer {
         }
         
         // Component ID
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.fillText(comp.id, centerX, y - 6);
     }
     
@@ -2183,8 +2183,8 @@ export class CircuitRenderer {
         
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -2201,7 +2201,7 @@ export class CircuitRenderer {
             baseGradient.addColorStop(1, '#222222');
             this.ctx.fillStyle = baseGradient;
             this.ctx.strokeStyle = '#111';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.roundRect(x, y, w, h, 2.5);
             this.ctx.fill();
             this.ctx.stroke();
@@ -2240,7 +2240,7 @@ export class CircuitRenderer {
             housingGradient.addColorStop(1, '#5d646b');
             this.ctx.fillStyle = housingGradient;
             this.ctx.strokeStyle = '#4a5057';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.roundRect(x + w * 0.1, y, w * 0.8, h, 2);
             this.ctx.fill();
             this.ctx.stroke();
@@ -2266,7 +2266,7 @@ export class CircuitRenderer {
         }
         
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + w / 2, y + h + (comp.type === 'SPST' ? 4 : 14));
@@ -2286,8 +2286,8 @@ export class CircuitRenderer {
         
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - pinLengthPx - 4, w + 8, h + pinLengthPx * 2 + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -2299,7 +2299,7 @@ export class CircuitRenderer {
         bodyGradient.addColorStop(1, '#141414');
         this.ctx.fillStyle = bodyGradient;
         this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.roundRect(x, y, w, h, 3);
         this.ctx.fill();
         this.ctx.stroke();
@@ -2356,7 +2356,7 @@ export class CircuitRenderer {
         }
         
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + w / 2, y + h + pinLengthPx + 4);
@@ -2373,8 +2373,8 @@ export class CircuitRenderer {
         
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.ctx.beginPath();
             this.ctx.arc(x + w / 2, y + h / 2, Math.max(w, h) / 2 + 4, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -2401,7 +2401,7 @@ export class CircuitRenderer {
         this.ctx.fill();
         
         this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.ctx.stroke();
         
         // Sound opening
@@ -2415,7 +2415,7 @@ export class CircuitRenderer {
         // Simulation: sound arcs while the buzzer is driven
         if (this.simResult?.activeBuzzers.has(comp.id)) {
             this.ctx.strokeStyle = '#2ecc71';
-            this.ctx.lineWidth = 1.5 / this.zoom;
+            this.ctx.lineWidth = 1.5;
             for (let r = 1; r <= 3; r++) {
                 this.ctx.beginPath();
                 this.ctx.arc(centerX, centerY, radius + r * 4, -Math.PI / 3, Math.PI / 3);
@@ -2428,7 +2428,7 @@ export class CircuitRenderer {
         
         if (comp.type !== 'PASSIVE_BUZZER') {
             this.ctx.fillStyle = '#c44';
-            this.ctx.font = `bold ${8 / this.zoom}px sans-serif`;
+            this.ctx.font = `bold ${8}px sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillText('+', centerX, centerY);
@@ -2440,7 +2440,7 @@ export class CircuitRenderer {
         this.drawPinPad(pin2X, pinY);
         
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, centerX, pinY + 4);
@@ -2457,8 +2457,8 @@ export class CircuitRenderer {
         
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -2472,7 +2472,7 @@ export class CircuitRenderer {
             this.ctx.fill();
             
             this.ctx.strokeStyle = this.palette.componentLabel;
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.ctx.stroke();
             
             this.ctx.fillStyle = '#ccc';
@@ -2486,7 +2486,7 @@ export class CircuitRenderer {
             }
             
             this.ctx.fillStyle = this.palette.componentLabel;
-            this.ctx.font = `${7 / this.zoom}px sans-serif`;
+            this.ctx.font = `${7}px sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillText('SERVO', x + w / 2, y + h / 2);
@@ -2504,7 +2504,7 @@ export class CircuitRenderer {
             this.ctx.fill();
             
             this.ctx.strokeStyle = '#5d646b';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.ctx.stroke();
             
             // Shaft
@@ -2518,7 +2518,7 @@ export class CircuitRenderer {
         }
         
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + w / 2, y + h + (comp.type === 'SERVO' ? 14 : 4));
@@ -2535,8 +2535,8 @@ export class CircuitRenderer {
         
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -2549,7 +2549,7 @@ export class CircuitRenderer {
             // TO-220 metal tab
             this.ctx.fillStyle = '#b9bec4';
             this.ctx.strokeStyle = '#8a9099';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.roundRect(x + w * 0.2, y - h * 0.16, w * 0.6, h * 0.2, 1);
             this.ctx.fill();
             this.ctx.stroke();
@@ -2566,7 +2566,7 @@ export class CircuitRenderer {
             
             // White marking
             this.ctx.fillStyle = '#e8e8e8';
-            this.ctx.font = `${6 / this.zoom}px sans-serif`;
+            this.ctx.font = `${6}px sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillText(comp.value ?? 'REG', centerX, y + h * 0.55);
@@ -2589,7 +2589,7 @@ export class CircuitRenderer {
             bodyGradient.addColorStop(1, '#1f2848');
             this.ctx.fillStyle = bodyGradient;
             this.ctx.strokeStyle = '#161d36';
-            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.lineWidth = 1;
             this.roundRect(x, y, w, h, 2.5);
             this.ctx.fill();
             this.ctx.stroke();
@@ -2606,14 +2606,14 @@ export class CircuitRenderer {
             
             // Polarity marks and value
             this.ctx.fillStyle = '#ff6b6b';
-            this.ctx.font = `bold ${8 / this.zoom}px sans-serif`;
+            this.ctx.font = `bold ${8}px sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillText('+', centerX - holeSpacing * 0.45, y + h * 0.3);
             this.ctx.fillStyle = '#9bb3ff';
             this.ctx.fillText('−', centerX + holeSpacing * 0.45, y + h * 0.3);
             this.ctx.fillStyle = '#e8e8e8';
-            this.ctx.font = `bold ${9 / this.zoom}px sans-serif`;
+            this.ctx.font = `bold ${9}px sans-serif`;
             this.ctx.fillText(comp.value ?? '9V', centerX, y + h * 0.62);
             
             this.drawLead(pin1X, y + h, pin1X, pinY);
@@ -2623,7 +2623,7 @@ export class CircuitRenderer {
         }
         
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         this.ctx.fillText(comp.id, x + w / 2, y + h + (comp.type === 'REGULATOR' ? 14 : 10));
@@ -2639,8 +2639,8 @@ export class CircuitRenderer {
         
         if (this.selectedId === comp.id) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
-            this.ctx.setLineDash([4 / this.zoom, 2 / this.zoom]);
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
             this.roundRect(x - 4, y - 4, w + 8, h + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
@@ -2655,7 +2655,7 @@ export class CircuitRenderer {
         canGradient.addColorStop(1, '#7c838a');
         this.ctx.fillStyle = canGradient;
         this.ctx.strokeStyle = '#5d646b';
-        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.lineWidth = 1;
         this.ctx.beginPath();
         this.ctx.ellipse(x + w / 2, centerY, w * 0.4, h / 2, 0, 0, Math.PI * 2);
         this.ctx.fill();
@@ -2663,7 +2663,7 @@ export class CircuitRenderer {
         
         // Can crimp lines
         this.ctx.strokeStyle = '#8a9099';
-        this.ctx.lineWidth = 0.5 / this.zoom;
+        this.ctx.lineWidth = 0.5;
         this.ctx.beginPath();
         this.ctx.moveTo(x + w * 0.3, y + h * 0.12);
         this.ctx.lineTo(x + w * 0.3, y + h * 0.88);
@@ -2677,7 +2677,7 @@ export class CircuitRenderer {
         this.drawPinPad(x + w, centerY);
         
         this.ctx.fillStyle = this.palette.componentLabel;
-        this.ctx.font = `${8 / this.zoom}px sans-serif`;
+        this.ctx.font = `${8}px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         if (comp.value) {
@@ -2698,12 +2698,12 @@ export class CircuitRenderer {
         
         // Check if this wire is selected
         const isSelected = this.selectedId === `wire_${wireIndex}`;
-        const cornerRadiusPx = 6 / this.zoom;
+        const cornerRadiusPx = 6;
 
         // Selection highlight (draw thicker line behind)
         if (isSelected) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 7 / this.zoom;
+            this.ctx.lineWidth = 7;
             this.ctx.lineCap = 'round';
             this.ctx.lineJoin = 'round';
             this.ctx.setLineDash([]);
@@ -2721,7 +2721,7 @@ export class CircuitRenderer {
             }
         }
         this.ctx.strokeStyle = strokeColor;
-        this.ctx.lineWidth = 4 / this.zoom;
+        this.ctx.lineWidth = 4;
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
         this.traceWirePath(points, cornerRadiusPx);
@@ -2731,7 +2731,7 @@ export class CircuitRenderer {
         const netId = wireIndex !== undefined && this.netlist ? this.netlist.wireNet[wireIndex] : undefined;
         if (netId !== undefined && netId === this.highlightedNetId()) {
             this.ctx.strokeStyle = 'rgba(88, 166, 255, 0.35)';
-            this.ctx.lineWidth = 10 / this.zoom;
+            this.ctx.lineWidth = 10;
             this.traceWirePath(points, cornerRadiusPx);
             this.ctx.stroke();
         }
@@ -2745,14 +2745,14 @@ export class CircuitRenderer {
             this.ctx.fillStyle = '#f5f5f5';
             this.ctx.fill();
             this.ctx.strokeStyle = strokeColor;
-            this.ctx.lineWidth = 2.2 / this.zoom;
+            this.ctx.lineWidth = 2.2;
             this.ctx.stroke();
         }
         
         // Selection indicators on terminals
         if (isSelected) {
             this.ctx.strokeStyle = this.palette.selection;
-            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.lineWidth = 2;
             for (const terminal of [from, to]) {
                 this.ctx.beginPath();
                 this.ctx.arc(terminal.x, terminal.y, ringRadius + 2, 0, Math.PI * 2);
