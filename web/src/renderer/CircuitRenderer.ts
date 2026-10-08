@@ -438,6 +438,20 @@ export class CircuitRenderer {
     }
 
     private onPointerMove(e: PointerEvent): void {
+        // A move with no button held cannot be a drag. This recovers from a
+        // missed pointerup (for example a release outside the canvas) so a
+        // component can never keep moving on its own.
+        if (this.isDragging && e.buttons === 0) {
+            this.isDragging = false;
+            this.snapPreviewHoles = [];
+            this.isSnapped = false;
+            this.canvas.style.cursor = 'default';
+            this.rebuildOccupancy();
+            this.commitHistory();
+            this.redraw();
+            return;
+        }
+
         if (this.activePointers.has(e.pointerId)) {
             this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         }
