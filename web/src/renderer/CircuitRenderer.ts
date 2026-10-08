@@ -620,7 +620,10 @@ export class CircuitRenderer {
                                 }
                             }
                         } else {
-                            // Non-IC component - snap by first pin (rotation-aware)
+                            // Non-IC component - snap by first pin (rotation-aware).
+                            // Batteries only ever snap to the positive hole of a
+                            // rail pair, which puts their second lead on the
+                            // matching negative rail automatically.
                             const pin1 = footprint.pins[0];
                             const bodyCenterOffset = { x: footprint.bodyWidth / 2, y: footprint.bodyHeight / 2 };
                             const rotation = comp.rotation ?? 0;
@@ -629,10 +632,13 @@ export class CircuitRenderer {
                                 bodyCenterOffset,
                                 rotation
                             );
+                            const isBattery = comp.type === 'BATTERY';
+                            const previousPosition = { x: comp.position.x, y: comp.position.y };
                             const snapResult = snapMgr.snapComponentByPin(
                                 { x: newBaseX, y: newBaseY },
                                 pin1Offset,
-                                this.screenToBase(SNAP_RADIUS_PX)
+                                isBattery ? Number.POSITIVE_INFINITY : this.screenToBase(SNAP_RADIUS_PX),
+                                isBattery ? BreadboardGeometry.POSITIVE_RAIL_ROWS : undefined
                             );
                             
                             comp.position.x = snapResult.bodyX;
@@ -640,8 +646,10 @@ export class CircuitRenderer {
                             const collides = snapResult.snapped && this.hasPinCollision(comp, geo);
                             if (collides) {
                                 // Never snap onto holes that are already occupied.
-                                comp.position.x = newBaseX;
-                                comp.position.y = newBaseY;
+                                // A battery must stay on the rails, so it keeps
+                                // its last valid hole instead of floating free.
+                                comp.position.x = isBattery ? previousPosition.x : newBaseX;
+                                comp.position.y = isBattery ? previousPosition.y : newBaseY;
                             }
                             this.isSnapped = snapResult.snapped && !collides;
                             this.snapPreviewCollision = collides;
@@ -1280,6 +1288,20 @@ export class CircuitRenderer {
         const findFreeHole = (pin: number): { x: number; y: number } | null => {
             const hole = componentPinHole(comp, pin, geo);
             if (!hole) return null; // off-board: leave the wire where it is
+            if (snapMgr && BreadboardGeometry.RAIL_ROWS.includes(hole.row)) {
+                // Rails are buses: any free hole on the same rail works.
+                for (let offset = 1; offset <= BreadboardGeometry.NUM_COLS; offset++) {
+                    for (const candidate of [hole.col + offset, hole.col - offset]) {
+                        if (candidate < 1 || candidate > BreadboardGeometry.NUM_COLS) continue;
+                        const occupants = snapMgr.getHoleOccupancy(candidate, hole.row)
+                            .filter(o => !o.componentId.startsWith('wire_'));
+                        if (occupants.length === 0) {
+                            const pos = geo.getHolePosition(candidate, hole.row);
+                            return { x: pos.x, y: pos.y };
+                        }
+                    }
+                }
+            }
             if (snapMgr) {
                 const isTopHalf = BreadboardGeometry.TOP_ROWS.includes(hole.row);
                 const rows = isTopHalf ? topRows : bottomRows;
@@ -1924,6 +1946,9 @@ export class CircuitRenderer {
         if (!this.circuitIR || !this.selectedId) return false;
         const comp = this.circuitIR.components.find(c => c.id === this.selectedId);
         if (!comp) return false;
+        // A battery is pinned to the rails with + above −; flipping it would
+        // reverse its polarity against the rail pair it plugs into.
+        if (comp.type === 'BATTERY') return false;
         const geo = this.geometryFor(comp.boardId);
         if (!geo) return false;
 
@@ -3044,6 +3069,56 @@ export class CircuitRenderer {
                 this.drawLead(px, y + h, px, pinY);
                 this.drawPinPad(px, pinY);
             }
+        } else if (getComponentFootprint('power', comp.pinCount, comp.type).orientation === 'rail') {
+            // Rail battery. Only shown before the SVG artwork finishes
+            // loading: the body lies along the rail and both leads enter
+            // the rail pair at its right edge.
+            const footprint = getComponentFootprint('power', comp.pinCount, comp.type);
+            const leadLength = 7 * S;
+            const bodyW = Math.max(2, w - leadLength);
+            const bodyGradient = this.ctx.createLinearGradient(0, y, 0, y + h);
+            bodyGradient.addColorStop(0, '#46569c');
+            bodyGradient.addColorStop(0.5, '#33406f');
+            bodyGradient.addColorStop(1, '#1f2848');
+            this.ctx.fillStyle = bodyGradient;
+            this.ctx.strokeStyle = '#161d36';
+            this.ctx.lineWidth = 1;
+            this.roundRect(x, y, bodyW, h, 2.5);
+            this.ctx.fill();
+            this.ctx.stroke();
+            
+            const pinPx = (index: number) => ({
+                x: (comp.position.x + footprint.pins[index].offsetX) * S,
+                y: (comp.position.y + footprint.pins[index].offsetY) * S,
+            });
+            const pin1 = pinPx(0);
+            const pin2 = pinPx(1);
+            
+            this.ctx.strokeStyle = '#af1c1c';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + bodyW, pin1.y);
+            this.ctx.lineTo(pin1.x, pin1.y);
+            this.ctx.stroke();
+            this.ctx.strokeStyle = '#222222';
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + bodyW, pin2.y);
+            this.ctx.lineTo(pin2.x, pin2.y);
+            this.ctx.stroke();
+            this.drawPinPad(pin1.x, pin1.y);
+            this.drawPinPad(pin2.x, pin2.y);
+            
+            // Polarity marks and value
+            this.ctx.fillStyle = '#ff6b6b';
+            this.ctx.font = `bold ${8}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('+', x + bodyW * 0.82, pin1.y);
+            this.ctx.fillStyle = '#9bb3ff';
+            this.ctx.fillText('−', x + bodyW * 0.82, pin2.y);
+            this.ctx.fillStyle = '#e8e8e8';
+            this.ctx.font = `bold ${9}px sans-serif`;
+            this.ctx.fillText(comp.value ?? '9V', x + bodyW / 2, y + h / 2);
         } else {
             const centerX = x + w / 2;
             const pinY = y + h + 2 * S;

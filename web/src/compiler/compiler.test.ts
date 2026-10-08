@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compile, CompileError } from './compiler';
+import { BreadboardGeometry } from '../geometry/BreadboardGeometry';
+import { componentPinHole } from '../geometry/PinGeometry';
 
 const BOARD = '@board B1 breadboard_830\n';
 
@@ -109,6 +111,22 @@ describe('wires', () => {
         expect(ir.wires).toHaveLength(1);
         expect(ir.wires[0].from.component).toBe('R1');
         expect(ir.wires[0].to.component).toBe('LED1');
+    });
+
+    it('places batteries across the power rail and routes their wires along it', () => {
+        const ir = compile(`@battery BAT1 9V\n@resistor R1 330\n${BOARD}\nmap (\n (BAT1 pin 1 -> R1 pin 1)\n)\n`);
+        const geo = new BreadboardGeometry(0, 0);
+        const bat = ir.components.find(c => c.id === 'BAT1')!;
+        const pin1 = componentPinHole(bat, 1, geo)!;
+        const pin2 = componentPinHole(bat, 2, geo)!;
+
+        // + on the positive rail of the top pair, − one rail gap below.
+        expect(pin1.row).toBe('TOP+');
+        expect(pin2.row).toBe('TOP-');
+        expect(pin2.col).toBe(pin1.col);
+
+        const wire = ir.wires[0];
+        expect(geo.getRowAtY(wire.from.y)).toBe('TOP+');
     });
 });
 

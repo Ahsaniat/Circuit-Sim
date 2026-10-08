@@ -153,9 +153,11 @@ export const COMPONENT_ART: Record<string, ComponentArt> = {
         url: batteryUrl,
         width: 226,
         height: 484,
-        // Upright battery; pin 1 is '+' and pin 2 is '−' at the polarity marks.
-        pins: [{ x: 68.7, y: 106.8 }, { x: 162.5, y: 106.8 }],
-        rotate: 0,
+        // The battery lies along the power rails: its red (+) and black (−)
+        // leads are stacked vertically one rail gap apart. pin 1 is the red
+        // (+) lead, pin 2 the black (−) lead.
+        pins: [{ x: 68.7, y: 4.1 }, { x: 162.5, y: 4.1 }],
+        rotate: 90,
         scaleFrom: 'x',
     },
     DC: {

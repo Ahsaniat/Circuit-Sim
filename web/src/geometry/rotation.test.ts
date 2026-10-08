@@ -37,7 +37,12 @@ describe('componentPinPositions', () => {
         comp.position = { x: 500, y: 500 };
         const positions = componentPinPositions(comp, geo);
         expect(positions.size).toBe(2);
-        expect(positions.get(1)!.x).toBeCloseTo(500.73, 5);
+        // Rail footprint: both leads leave the body's right edge, one rail
+        // gap apart, so the body sits to the left of the pins.
+        expect(positions.get(1)!.x).toBeCloseTo(515.24, 5);
+        expect(positions.get(1)!.y).toBeCloseTo(501.5, 5);
+        expect(positions.get(2)!.x).toBeCloseTo(515.24, 5);
+        expect(positions.get(2)!.y).toBeCloseTo(504.5, 5);
     });
 });
 

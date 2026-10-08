@@ -30,15 +30,16 @@ describe('computeArtTransform', () => {
         expect(second.y).toBeCloseTo(0, 5);
     });
 
-    it('maps a rotated part (battery, vertical artwork onto horizontal holes)', () => {
+    it('maps the pre-rotated battery artwork onto stacked rail holes', () => {
         const art = COMPONENT_ART.BATTERY;
-        const holes = [{ x: 0, y: 0 }, { x: 10.16, y: 0 }];
+        // Rail pair: same column, one rail gap apart.
+        const holes = [{ x: 0, y: 0 }, { x: 0, y: 3 }];
         const first = apply(art, holes, 0);
         const second = apply(art, holes, 1);
         expect(first.x).toBeCloseTo(0, 5);
         expect(first.y).toBeCloseTo(0, 5);
-        expect(second.x).toBeCloseTo(10.16, 5);
-        expect(second.y).toBeCloseTo(0, 5);
+        expect(second.x).toBeCloseTo(0, 5);
+        expect(second.y).toBeCloseTo(3, 5);
     });
 
     it('maps all 14 DIP pins onto their holes with per-axis fitting', () => {
@@ -166,12 +167,13 @@ describe('artDisplaySize', () => {
         expect(size.height).toBeCloseTo((34 / 90) * 5.08, 4);
     });
 
-    it('swaps dimensions for pre-rotated artwork', () => {
-        const size = artDisplaySize(COMPONENT_ART.BATTERY, 2.54, 0)!;
-        // Battery artwork is 484x226 with a 93.8-unit vertical pin span.
-        const scale = 2.54 / 93.8;
-        expect(size.width).toBeCloseTo(226 * scale, 4);
-        expect(size.height).toBeCloseTo(484 * scale, 4);
+    it('sizes a rail part from its vertical pin span', () => {
+        // Rail footprint: no horizontal pin span, one rail gap vertically.
+        const size = artDisplaySize(COMPONENT_ART.BATTERY, 0, 3.0)!;
+        // The pre-rotated artwork is 484 long along the rail, 226 across.
+        const scale = 3.0 / 93.8;
+        expect(size.width).toBeCloseTo(484 * scale, 4);
+        expect(size.height).toBeCloseTo(226 * scale, 4);
     });
 
     it('fits both axes for two-axis pin grids', () => {

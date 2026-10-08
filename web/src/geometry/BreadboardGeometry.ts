@@ -45,6 +45,10 @@ export class BreadboardGeometry {
     static readonly TOP_ROWS = ['A', 'B', 'C', 'D', 'E'];
     static readonly BOTTOM_ROWS = ['F', 'G', 'H', 'I', 'J'];
     static readonly RAIL_ROWS = ['TOP+', 'TOP-', 'BOTTOM+', 'BOTTOM-'];
+    /** The positive (+) hole of each rail pair. A rail component (battery)
+     *  plugs in here first, so its second lead lands on the matching (−)
+     *  hole one rail gap below. */
+    static readonly POSITIVE_RAIL_ROWS = ['TOP+', 'BOTTOM+'];
     static readonly ALL_ROWS = [...BreadboardGeometry.TOP_ROWS, ...BreadboardGeometry.BOTTOM_ROWS];
     static readonly ALL_ROWS_WITH_RAILS = [...BreadboardGeometry.TOP_ROWS, ...BreadboardGeometry.BOTTOM_ROWS, ...BreadboardGeometry.RAIL_ROWS];
     

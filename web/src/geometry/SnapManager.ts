@@ -120,7 +120,11 @@ export class SnapManager {
      * Returns snap info including whether the position is within snap range
      * Searches main rows (A-J) and power rail rows (TOP+, TOP-, BOTTOM+, BOTTOM-)
      */
-    findNearestHole(pos: Position, radius: number = SNAP_RADIUS): SnapResult {
+    findNearestHole(
+        pos: Position,
+        radius: number = SNAP_RADIUS,
+        rows: readonly string[] = BreadboardGeometry.ALL_ROWS_WITH_RAILS
+    ): SnapResult {
         // Windowed search: only columns that can contain a hole within the
         // radius need checking, which keeps drag events cheap (≤ ~9×14
         // instead of 14×63 distance computations).
@@ -133,7 +137,7 @@ export class SnapManager {
         let nearestHole: HolePosition | undefined;
         let minDistance = Infinity;
 
-        for (const row of BreadboardGeometry.ALL_ROWS_WITH_RAILS) {
+        for (const row of rows) {
             for (let col = minCol; col <= maxCol; col++) {
                 const hole = this.geometry.getHolePosition(col, row);
                 const dx = pos.x - hole.x;
@@ -158,8 +162,12 @@ export class SnapManager {
      * Snap a position to the nearest hole if within range
      * Returns the snapped position and hole info
      */
-    snapPosition(pos: Position, radius: number = SNAP_RADIUS): { x: number; y: number; snapped: boolean; col?: number; row?: string } {
-        const result = this.findNearestHole(pos, radius);
+    snapPosition(
+        pos: Position,
+        radius: number = SNAP_RADIUS,
+        rows: readonly string[] = BreadboardGeometry.ALL_ROWS_WITH_RAILS
+    ): { x: number; y: number; snapped: boolean; col?: number; row?: string } {
+        const result = this.findNearestHole(pos, radius, rows);
         
         if (result.snapped && result.hole) {
             return {
@@ -182,7 +190,12 @@ export class SnapManager {
      * @param pin1Offset - Offset of pin 1 from body position
      * @returns Adjusted body position that snaps pin 1 to nearest hole
      */
-    snapComponentByPin(bodyPos: Position, pin1Offset: Position, radius: number = SNAP_RADIUS): { 
+    snapComponentByPin(
+        bodyPos: Position,
+        pin1Offset: Position,
+        radius: number = SNAP_RADIUS,
+        rows: readonly string[] = BreadboardGeometry.ALL_ROWS_WITH_RAILS
+    ): { 
         bodyX: number; 
         bodyY: number; 
         snapped: boolean;
@@ -196,7 +209,7 @@ export class SnapManager {
         };
         
         // Find nearest hole for pin 1
-        const snapResult = this.snapPosition(pin1Pos, radius);
+        const snapResult = this.snapPosition(pin1Pos, radius, rows);
         
         if (snapResult.snapped) {
             // Adjust body position so pin 1 lands on the snapped hole

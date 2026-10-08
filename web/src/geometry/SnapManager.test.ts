@@ -55,6 +55,18 @@ describe('SnapManager.findNearestHole', () => {
         expect(snap.snapPosition({ x: -100, y: -100 }).snapped).toBe(false);
         expect(snap.snapPosition({ x: 1000, y: 1000 }).snapped).toBe(false);
     });
+
+    it('can be constrained to the power rails', () => {
+        // Row C is closer to the TOP- rail than to any other rail.
+        const mainHole = geo.getHolePosition(10, 'C');
+        const result = snap.snapPosition(
+            { x: mainHole.x, y: mainHole.y },
+            Number.POSITIVE_INFINITY,
+            BreadboardGeometry.RAIL_ROWS
+        );
+        expect(result.snapped).toBe(true);
+        expect(result.row).toBe('TOP-');
+    });
 });
 
 describe('SnapManager.snapICComponent', () => {

@@ -36,8 +36,12 @@ export interface ComponentFootprint {
     bodyHeight: number;
     /** Pin definitions */
     pins: PinFootprint[];
-    /** Orientation: 'horizontal' or 'vertical' */
-    orientation: 'horizontal' | 'vertical';
+    /**
+     * 'horizontal' and 'vertical' span columns of one main row. 'rail'
+     * components span the two rows of one power rail pair, one pin per
+     * row (TOP+/TOP- or BOTTOM+/BOTTOM-).
+     */
+    orientation: 'horizontal' | 'vertical' | 'rail';
     /** Whether component straddles the center channel */
     straddlesChannel: boolean;
 }
@@ -483,15 +487,22 @@ export function getPowerFootprint(type: string): ComponentFootprint {
             straddlesChannel: false
         };
     } else {
+        // 9V battery: a rail component. The body lies along the power rail
+        // and its two leads drop into the pair of holes that make up that
+        // rail, one per row (+ above, − below). The body is centred on the
+        // pair and is as long as the artwork's pin span.
+        const railGap = BreadboardGeometry.RAIL_HOLE_SPAN - BreadboardGeometry.RAIL_HOLE_INSET;
+        const bodyHeight = 2 * railGap;
+        const bodyWidth = 6 * holeSpacing;
         return {
             category: 'power',
-            bodyWidth: 4,
-            bodyHeight: 8,
+            bodyWidth,
+            bodyHeight,
             pins: [
-                { number: 1, offsetX: 2 - holeSpacing / 2, offsetY: 8 + 2, targetRow: 'D', label: '+' },
-                { number: 2, offsetX: 2 + holeSpacing / 2, offsetY: 8 + 2, targetRow: 'D', label: '-' }
+                { number: 1, offsetX: bodyWidth, offsetY: (bodyHeight - railGap) / 2, targetRow: 'TOP+', label: '+' },
+                { number: 2, offsetX: bodyWidth, offsetY: (bodyHeight + railGap) / 2, targetRow: 'TOP-', label: '-' }
             ],
-            orientation: 'vertical',
+            orientation: 'rail',
             straddlesChannel: false
         };
     }
@@ -573,7 +584,32 @@ export function calculatePlacement(
         // Non-straddling components (passive, diode, LED, sensor, transistor)
         const row = preferredRow || 'D';
         
-        if (footprint.orientation === 'horizontal') {
+        if (footprint.orientation === 'rail') {
+            // Rail component: pin 1 sits on the preferred rail row, each
+            // further pin on the next row of the same rail pair. Refuse to
+            // place one anywhere but on a rail: its pins would not line up.
+            const railIndex = BreadboardGeometry.RAIL_ROWS.indexOf(row);
+            if (railIndex < 0) {
+                throw new Error(`Rail component must be placed on a rail row, got '${row}'`);
+            }
+            const pin1 = footprint.pins[0];
+            const hole1 = geo.getHolePosition(startCol, row);
+            
+            bodyX = hole1.x - pin1.offsetX;
+            bodyY = hole1.y - pin1.offsetY;
+            
+            footprint.pins.forEach((pin, index) => {
+                const railRow = BreadboardGeometry.RAIL_ROWS[railIndex + index];
+                const hole = geo.getHolePosition(startCol, railRow);
+                pinPositions.set(pin.number, {
+                    x: hole.x,
+                    y: hole.y,
+                    col: startCol,
+                    row: railRow
+                });
+            });
+            occupiedColumns.push(startCol);
+        } else if (footprint.orientation === 'horizontal') {
             // Horizontal component - pins span columns in same row
             // For 2-pin components that span multiple holes, calculate column from offsetX
             const pin1 = footprint.pins[0];

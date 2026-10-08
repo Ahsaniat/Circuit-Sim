@@ -781,10 +781,15 @@ class IRGenerator {
 
         for (const [boardId, boardComponents] of byBoard) {
             const straddlingComps: CompDecl[] = [];
+            const batteryComps: CompDecl[] = [];
             const topHalfComps: CompDecl[] = [];
             const bottomHalfComps: CompDecl[] = [];
 
             for (const comp of boardComponents) {
+                if (comp.type === 'BATTERY') {
+                    batteryComps.push(comp);
+                    continue;
+                }
                 const pinCount = this.resolvePinCount(comp);
                 const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
                 if (footprint.straddlesChannel) {
@@ -798,6 +803,10 @@ class IRGenerator {
 
             for (const comp of straddlingComps) {
                 this.placeComponent(comp, ir, 'straddling', undefined, boardId);
+            }
+            // Batteries live on the top power rail.
+            for (const comp of batteryComps) {
+                this.placeComponent(comp, ir, 'top', 'TOP+', boardId);
             }
             for (const comp of topHalfComps) {
                 this.placeComponent(comp, ir, 'top', 'C', boardId);
@@ -880,6 +889,24 @@ class IRGenerator {
         return { x: hole.x, y: hole.y };
     }
 
+    /**
+     * Find a free hole on a power rail, searching columns next to the given
+     * one (the whole rail is one electrical node).
+     */
+    private findFreeRailHole(boardId: string, col: number, row: string, wireId: string): Position {
+        for (let offset = 1; offset <= BreadboardGeometry.NUM_COLS; offset++) {
+            for (const candidate of [col + offset, col - offset]) {
+                if (candidate < 1 || candidate > BreadboardGeometry.NUM_COLS) continue;
+                const key = `${boardId}:${candidate},${row}`;
+                if (!this.occupiedHoles.has(key)) {
+                    this.occupiedHoles.set(key, wireId);
+                    return this.getBoardHolePosition(boardId, candidate, row);
+                }
+            }
+        }
+        return this.getBoardHolePosition(boardId, col, row);
+    }
+
     // Find the next free hole in the same column (shorted together on breadboard)
     private findFreeHoleInColumn(boardId: string, col: number, preferredRow: string, wireId: string): string {
         // Rows in order of preference for top half (A-E) and bottom half (F-J)
@@ -935,6 +962,12 @@ class IRGenerator {
             throw new CompileError(`Pin ${pinNumber} not found for component '${componentId}'`, 1, 1);
         }
         
+        // Pins sitting on a power rail connect anywhere along that bus, so
+        // place the wire terminal on a free hole of the same rail row.
+        if (BreadboardGeometry.RAIL_ROWS.includes(pinPos.row)) {
+            return this.findFreeRailHole(boardId, pinPos.col, pinPos.row, wireId);
+        }
+
         // Determine which row to find a free hole in
         // For ICs: E pins -> look in top half (D, C, B, A)
         //          F pins -> look in bottom half (G, H, I, J)
