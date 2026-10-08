@@ -1580,22 +1580,30 @@ export class CircuitRenderer {
         const minY = Math.min(...corners.map(c => c.y));
         const maxY = Math.max(...corners.map(c => c.y));
 
-        // Drop shadow under the artwork
-        this.ctx.save();
-        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-        this.ctx.shadowBlur = 6;
-        this.ctx.shadowOffsetY = 2.5;
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.10)';
-        this.roundRect(minX, minY, maxX - minX, maxY - minY, 3);
-        this.ctx.fill();
-        this.ctx.restore();
-
-        // The artwork itself
+        // The artwork itself, with a shadow that follows its silhouette
+        // (no background panel behind transparent areas).
+        const avgScale = (transform.scaleX + transform.scaleY) / 2 || 1;
         this.ctx.save();
         this.ctx.translate(transform.translateX, transform.translateY);
         this.ctx.scale(transform.scaleX, transform.scaleY);
         this.ctx.rotate(transform.rotate);
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        this.ctx.shadowBlur = 6 / avgScale;
+        this.ctx.shadowOffsetY = 2.5 / avgScale;
         this.ctx.drawImage(image, 0, 0, art.width, art.height);
+        // Cover the printed type; the real type is drawn after the restore.
+        if (art.label) {
+            this.ctx.shadowColor = 'transparent';
+            this.ctx.shadowBlur = 0;
+            this.ctx.shadowOffsetY = 0;
+            this.ctx.fillStyle = art.label.coverColor ?? '#333333';
+            this.ctx.fillRect(
+                art.label.x - art.label.coverWidth / 2,
+                art.label.y - art.label.coverHeight / 2,
+                art.label.coverWidth,
+                art.label.coverHeight
+            );
+        }
         this.ctx.restore();
 
         // Selection highlight around the artwork
@@ -1606,6 +1614,17 @@ export class CircuitRenderer {
             this.roundRect(minX - 4, minY - 4, maxX - minX + 8, maxY - minY + 8, 4);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
+        }
+
+        // Dynamic type marking for ICs (the artwork's printed label was covered)
+        if (art.label) {
+            const center = apply(art.label.x, art.label.y);
+            const bodyHeight = maxY - minY;
+            this.ctx.fillStyle = '#e8e8e8';
+            this.ctx.font = `bold ${Math.max(6, bodyHeight * 0.3)}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(comp.type, center.x, center.y);
         }
 
         // Simulation overlay for LEDs: glow when lit, dim when dark.

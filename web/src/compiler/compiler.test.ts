@@ -83,6 +83,24 @@ describe('component keywords', () => {
         expect(compile(`@regulator VR1 LM7805\n${BOARD}`).components[0].type).toBe('REGULATOR');
         expect(compile(`@switch_spdt SW2 SPDT\n${BOARD}`).components[0].type).toBe('SPDT');
     });
+
+    it('supports the 74HC family and friends', () => {
+        const cases: Array<[string, number]> = [
+            ['74HC00', 14], ['74HC02', 14], ['74HC04', 14], ['74HC08', 14],
+            ['74HC10', 14], ['74HC11', 14], ['74HC14', 14], ['74HC20', 14],
+            ['74HC21', 14], ['74HC27', 14], ['74HC32', 14], ['74HC73', 14],
+            ['74HC74', 14], ['74HC86', 14], ['74HC93', 14], ['74HC132', 14],
+            ['74HC75', 16], ['74HC283', 16], ['74HC595', 16], ['74HC4017', 16],
+            ['CD4511', 16], ['PCF8574', 16],
+            ['556', 14],
+            ['LM393', 8], ['LM339', 14],
+        ];
+        for (const [type, pins] of cases) {
+            const ir = compile(`@comp U1 ${type}\n${BOARD}`);
+            expect(ir.components[0].type, type).toBe(type);
+            expect(ir.components[0].pinCount, type).toBe(pins);
+        }
+    });
 });
 
 describe('wires', () => {

@@ -23,6 +23,16 @@ export interface ArtPin {
     y: number;
 }
 
+export interface ArtLabel {
+    /** Label centre in viewBox coordinates. */
+    x: number;
+    y: number;
+    /** Area of the printed label to cover before drawing the real type. */
+    coverWidth: number;
+    coverHeight: number;
+    coverColor?: string;
+}
+
 export interface ComponentArt {
     url: string;
     width: number;
@@ -30,6 +40,7 @@ export interface ComponentArt {
     pins: ArtPin[];
     rotate: 0 | 90 | 180 | -90;
     scaleFrom: 'x' | 'y' | 'both';
+    label?: ArtLabel;
 }
 
 export const COMPONENT_ART: Record<string, ComponentArt> = {
@@ -167,11 +178,85 @@ export const COMPONENT_ART: Record<string, ComponentArt> = {
         ],
         rotate: 0,
         scaleFrom: 'both',
+        label: { x: 83.75, y: 31.5, coverWidth: 80, coverHeight: 18, coverColor: '#333333' },
     },
 };
 
+/**
+ * Every 14-pin DIP shares the same package artwork; the printed type is
+ * covered and the real type is drawn by the renderer.
+ */
+const DIP14_TYPES = [
+    // Classic 74xx
+    '7400', '7402', '7404', '7408', '7410', '7411', '7420', '7421',
+    '7427', '7432', '7486', '7474', '7490', '74164',
+    // 74HC family and friends
+    '74HC00', '74HC02', '74HC04', '74HC08', '74HC10', '74HC11', '74HC14',
+    '74HC20', '74HC21', '74HC27', '74HC32', '74HC73', '74HC74', '74HC86',
+    '74HC93', '74HC132', '556', 'LM339',
+];
+for (const type of DIP14_TYPES) {
+    COMPONENT_ART[type] = COMPONENT_ART['7411'];
+}
+
 export function artFor(type: string): ComponentArt | undefined {
     return COMPONENT_ART[type];
+}
+
+/**
+ * Rendered size of the artwork in base units, derived from the footprint's
+ * pin span. Used by the compiler to reserve enough room so large parts do
+ * not overlap their neighbours.
+ */
+export function artDisplaySize(
+    art: ComponentArt,
+    footprintSpanX: number,
+    footprintSpanY: number
+): { width: number; height: number } | null {
+    const theta = (art.rotate * Math.PI) / 180;
+    const cos = Math.cos(theta);
+    const sin = Math.sin(theta);
+
+    // Pin spans in the rotated frame
+    let pinMinX = Infinity, pinMaxX = -Infinity, pinMinY = Infinity, pinMaxY = -Infinity;
+    for (const pin of art.pins) {
+        const x = pin.x * cos - pin.y * sin;
+        const y = pin.x * sin + pin.y * cos;
+        pinMinX = Math.min(pinMinX, x); pinMaxX = Math.max(pinMaxX, x);
+        pinMinY = Math.min(pinMinY, y); pinMaxY = Math.max(pinMaxY, y);
+    }
+    const pinW = pinMaxX - pinMinX;
+    const pinH = pinMaxY - pinMinY;
+
+    // Full artwork bounds in the rotated frame
+    const corners = [
+        { x: 0, y: 0 },
+        { x: art.width, y: 0 },
+        { x: art.width, y: art.height },
+        { x: 0, y: art.height },
+    ].map(p => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
+    const artW = Math.max(...corners.map(c => c.x)) - Math.min(...corners.map(c => c.x));
+    const artH = Math.max(...corners.map(c => c.y)) - Math.min(...corners.map(c => c.y));
+
+    let scaleX = 0;
+    let scaleY = 0;
+    if (art.scaleFrom === 'both' && pinW > 0 && pinH > 0 && footprintSpanX > 0 && footprintSpanY > 0) {
+        scaleX = footprintSpanX / pinW;
+        scaleY = footprintSpanY / pinH;
+    } else {
+        let uniform = 0;
+        if (pinW > 0 && footprintSpanX > 0) {
+            uniform = footprintSpanX / pinW;
+        } else if (pinH > 0 && footprintSpanY > 0) {
+            uniform = footprintSpanY / pinH;
+        } else {
+            return null;
+        }
+        scaleX = uniform;
+        scaleY = uniform;
+    }
+
+    return { width: artW * scaleX, height: artH * scaleY };
 }
 
 export interface ArtTransform {

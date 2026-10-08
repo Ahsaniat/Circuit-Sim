@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMPONENT_ART, computeArtTransform, ComponentArt } from './componentArt';
+import { COMPONENT_ART, computeArtTransform, artDisplaySize, artFor, ComponentArt } from './componentArt';
 
 /** Apply a computed transform the same way the canvas does. */
 function apply(art: ComponentArt, holes: Array<{ x: number; y: number } | undefined>, pinIndex: number) {
@@ -88,5 +88,43 @@ describe('computeArtTransform', () => {
             expect(art.width, type).toBeGreaterThan(0);
             expect(art.height, type).toBeGreaterThan(0);
         }
+    });
+
+    it('shares the DIP-14 artwork across all 14-pin IC types', () => {
+        const dip = COMPONENT_ART['7411'];
+        for (const type of ['74HC00', '74HC08', '74HC74', 'LM339', '556', '7490']) {
+            expect(artFor(type), type).toBe(dip);
+        }
+        expect(dip.pins).toHaveLength(14);
+        expect(dip.label).toBeDefined();
+    });
+});
+
+describe('artDisplaySize', () => {
+    it('sizes a horizontal part from its pin span', () => {
+        const size = artDisplaySize(COMPONENT_ART.RES, 5.08, 0)!;
+        // The artwork is 96 wide for a 90-unit pin span.
+        expect(size.width).toBeCloseTo((96 / 90) * 5.08, 4);
+        expect(size.height).toBeCloseTo((34 / 90) * 5.08, 4);
+    });
+
+    it('swaps dimensions for pre-rotated artwork', () => {
+        const size = artDisplaySize(COMPONENT_ART.BATTERY, 2.54, 0)!;
+        // Battery artwork is 484x226 with a 93.8-unit vertical pin span.
+        const scale = 2.54 / 93.8;
+        expect(size.width).toBeCloseTo(226 * scale, 4);
+        expect(size.height).toBeCloseTo(484 * scale, 4);
+    });
+
+    it('fits both axes for two-axis pin grids', () => {
+        const size = artDisplaySize(COMPONENT_ART['7411'], 15.24, 6.04)!;
+        expect(size.width).toBeCloseTo(165 * (15.24 / 125.4), 3);
+        expect(size.height).toBeCloseTo(62 * (6.04 / 62), 3);
+    });
+
+    it('reserves more room for large parts than for small ones', () => {
+        const resistor = artDisplaySize(COMPONENT_ART.RES, 5.08, 0)!;
+        const capacitor = artDisplaySize(COMPONENT_ART.CAP, 5.08, 0)!;
+        expect(capacitor.width).toBeGreaterThan(resistor.width * 2);
     });
 });

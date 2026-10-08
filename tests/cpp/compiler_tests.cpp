@@ -245,6 +245,25 @@ void testHighBoardPinCompiles() {
     CHECK_CONTAINS(result.json, "\"B1\"");
 }
 
+void testModernICFamilyCompiles() {
+    Compiler compiler;
+    auto result = compiler.compile(
+        "@comp U1 74HC595\n"
+        "@comp U2 74HC14\n"
+        "@comp U3 CD4511\n"
+        "@comp U4 PCF8574\n"
+        "@comp U5 556\n"
+        "@comp U6 LM393\n"
+        "@comp U7 LM339\n"
+        "@board B1 breadboard_830\n"
+        "map (\n"
+        "  (U1 pin 14 -> U2 pin 1)\n"
+        ")\n");
+    CHECK(result.success);
+    CHECK_CONTAINS(result.json, "74HC595");
+    CHECK_CONTAINS(result.json, "LM339");
+}
+
 // Shared fixtures also executed by the web compiler test suite
 // (web/src/compiler/conformance.test.ts). File suffix decides the expected
 // outcome: .ok.csim must compile, .err.csim must fail.
@@ -294,6 +313,7 @@ int main() {
     testInvalidPinTokenFails();
     testHugePinNumberFails();
     testHighBoardPinCompiles();
+    testModernICFamilyCompiles();
     testConformanceFixtures();
 
     std::cout << checks << " checks, " << failures << " failures\n";

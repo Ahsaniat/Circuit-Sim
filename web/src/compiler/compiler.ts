@@ -7,6 +7,7 @@ import {
     getComponentFootprint, 
     calculatePlacement 
 } from '../geometry/ComponentFootprints';
+import { artFor, artDisplaySize } from '../renderer/componentArt';
 
 interface Token {
     type: string;
@@ -184,6 +185,18 @@ const BUILTIN_ICS: Record<string, number> = {
     
     // Op-amps
     '741': 8, 'LM741': 8, 'LM358': 8,
+    
+    // 74HC series (same pinouts as their 74xx counterparts) and friends
+    '74HC00': 14, '74HC02': 14, '74HC04': 14, '74HC08': 14,
+    '74HC10': 14, '74HC11': 14, '74HC14': 14, '74HC20': 14,
+    '74HC21': 14, '74HC27': 14, '74HC32': 14, '74HC73': 14,
+    '74HC74': 14, '74HC86': 14, '74HC93': 14, '74HC132': 14,
+    '74HC75': 16, '74HC283': 16, '74HC595': 16, '74HC4017': 16,
+    'CD4511': 16, 'PCF8574': 16,
+    '556': 14,
+    
+    // Comparators
+    'LM393': 8, 'LM339': 14,
     
     // Simple components (2-3 pins)
     'RES': 2, 'CAP': 2, 'IND': 2, 'POT': 3,
@@ -833,9 +846,21 @@ class IRGenerator {
         // Store placement info
         this.componentPlacements.set(comp.id, { footprint, placement: placementResult });
 
+        // Reserve room for the rendered artwork so large parts do not
+        // overlap their neighbours. The artwork's on-screen size follows
+        // from its pin span, so it is computed from the footprint here.
+        const pinSpanX = Math.max(...footprint.pins.map(p => p.offsetX)) - Math.min(...footprint.pins.map(p => p.offsetX));
+        const pinSpanY = Math.max(...footprint.pins.map(p => p.offsetY)) - Math.min(...footprint.pins.map(p => p.offsetY));
+        const art = artFor(comp.type);
+        const display = art ? artDisplaySize(art, pinSpanX, pinSpanY) : null;
+
         // Update next available column
         const maxCol = Math.max(...placementResult.occupiedColumns);
-        counters[placement] = maxCol + 2;  // Leave 1 column gap
+        const occupiedSpan = maxCol - startCol + 1;
+        const artColumns = display ? Math.ceil(display.width / BreadboardGeometry.HOLE_SPACING) : 0;
+        const columnsNeeded = Math.max(occupiedSpan, artColumns);
+        const tall = display ? display.height > 8 : false;
+        counters[placement] = startCol + columnsNeeded + (tall ? 4 : 2);
 
         // Create component IR
         ir.components.push({

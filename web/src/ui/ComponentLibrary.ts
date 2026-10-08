@@ -58,6 +58,8 @@ export const COMPONENT_CATEGORIES: ComponentCategory[] = [
             { keyword: 'XOR', label: 'XOR Gate (7486)', description: 'Quad 2-input XOR', example: '@XOR X1 7486' },
             { keyword: 'NAND3', label: '3-Input NAND (7410)', description: 'Triple 3-input NAND', example: '@NAND3 NA3 7410' },
             { keyword: 'AND4', label: '4-Input AND (7421)', description: 'Dual 4-input AND', example: '@AND4 A4 7421' },
+            { keyword: 'comp', label: 'Schmitt Inverter (74HC14)', description: 'Hex Schmitt inverter', example: '@comp U1 74HC14' },
+            { keyword: 'comp', label: 'Schmitt NAND (74HC132)', description: 'Quad Schmitt NAND', example: '@comp U1 74HC132' },
         ],
     },
     {
@@ -65,8 +67,11 @@ export const COMPONENT_CATEGORIES: ComponentCategory[] = [
         icon: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.75 4.75v3.5l2.35 2.35a.75.75 0 01-1.06 1.06l-2.5-2.5A.75.75 0 017.25 8.5V4.75a.75.75 0 011.5 0z"/></svg>',
         entries: [
             { keyword: 'comp', label: '555 Timer', description: '8-pin timer IC', example: '@comp T1 555' },
+            { keyword: 'comp', label: '556 Dual Timer', description: '14-pin dual timer', example: '@comp T1 556' },
             { keyword: 'comp', label: 'LM741 Op-Amp', description: 'Single op-amp', example: '@comp OA1 LM741' },
             { keyword: 'comp', label: 'LM358 Op-Amp', description: 'Dual op-amp', example: '@comp OA1 LM358' },
+            { keyword: 'comp', label: 'LM393 Comparator', description: 'Dual comparator', example: '@comp CMP1 LM393' },
+            { keyword: 'comp', label: 'LM339 Comparator', description: 'Quad comparator', example: '@comp CMP1 LM339' },
         ],
     },
     {
@@ -77,6 +82,8 @@ export const COMPONENT_CATEGORIES: ComponentCategory[] = [
             { keyword: 'jk_flipflop', label: 'JK Flip-Flop (7476)', description: 'Dual JK-type', example: '@jk_flipflop JK1 7476' },
             { keyword: 'counter_4bit', label: '4-bit Counter (74161)', description: 'Sync binary counter', example: '@counter_4bit C1 74161' },
             { keyword: 'counter_decade', label: 'Decade Counter (7490)', description: 'BCD counter', example: '@counter_decade C1 7490' },
+            { keyword: 'comp', label: 'Shift Register (74HC595)', description: '8-bit shift register with latch', example: '@comp U1 74HC595' },
+            { keyword: 'comp', label: 'Decade Counter (74HC4017)', description: 'Counter / decoder', example: '@comp U1 74HC4017' },
             { keyword: 'latch_8', label: '8-bit Latch (74373)', description: 'Octal D-latch', example: '@latch_8 L1 74373' },
         ],
     },
@@ -86,6 +93,8 @@ export const COMPONENT_CATEGORIES: ComponentCategory[] = [
         entries: [
             { keyword: 'decoder_3to8', label: '3-to-8 Decoder (74138)', description: 'Line decoder', example: '@decoder_3to8 D1 74138' },
             { keyword: 'decoder_2to4', label: '2-to-4 Decoder (74139)', description: 'Dual decoder', example: '@decoder_2to4 D1 74139' },
+            { keyword: 'comp', label: 'BCD-to-7seg (CD4511)', description: 'Display driver', example: '@comp U1 CD4511' },
+            { keyword: 'comp', label: 'I2C I/O Expander (PCF8574)', description: '8-bit I/O expander', example: '@comp U1 PCF8574' },
             { keyword: 'mux_8x1', label: '8-to-1 Mux (74151)', description: 'Data selector', example: '@mux_8x1 M1 74151' },
             { keyword: 'mux_4x1', label: '4-to-1 Mux (74153)', description: 'Dual selector', example: '@mux_4x1 M1 74153' },
             { keyword: 'shift_reg_8', label: 'Shift Register (74164)', description: '8-bit serial-in', example: '@shift_reg_8 SR1 74164' },

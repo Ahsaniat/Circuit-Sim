@@ -124,6 +124,35 @@ void SemanticAnalyzer::initBuiltinICs() {
     builtinICs_["battery"] = {"battery", 2, {}};
     builtinICs_["regulator"] = {"regulator", 3, {}};
     builtinICs_["crystal"] = {"crystal", 2, {}};
+
+    // 74HC family (same pinouts as their 74xx counterparts) and friends
+    builtinICs_["74HC00"] = {"74HC00", 14, {}};
+    builtinICs_["74HC02"] = {"74HC02", 14, {}};
+    builtinICs_["74HC04"] = {"74HC04", 14, {}};
+    builtinICs_["74HC08"] = {"74HC08", 14, {}};
+    builtinICs_["74HC10"] = {"74HC10", 14, {}};
+    builtinICs_["74HC11"] = {"74HC11", 14, {}};
+    builtinICs_["74HC14"] = {"74HC14", 14, {}};
+    builtinICs_["74HC20"] = {"74HC20", 14, {}};
+    builtinICs_["74HC21"] = {"74HC21", 14, {}};
+    builtinICs_["74HC27"] = {"74HC27", 14, {}};
+    builtinICs_["74HC32"] = {"74HC32", 14, {}};
+    builtinICs_["74HC73"] = {"74HC73", 14, {}};
+    builtinICs_["74HC74"] = {"74HC74", 14, {}};
+    builtinICs_["74HC86"] = {"74HC86", 14, {}};
+    builtinICs_["74HC93"] = {"74HC93", 14, {}};
+    builtinICs_["74HC132"] = {"74HC132", 14, {}};
+    builtinICs_["74HC75"] = {"74HC75", 16, {}};
+    builtinICs_["74HC283"] = {"74HC283", 16, {}};
+    builtinICs_["74HC595"] = {"74HC595", 16, {}};
+    builtinICs_["74HC4017"] = {"74HC4017", 16, {}};
+    builtinICs_["CD4511"] = {"CD4511", 16, {}};
+    builtinICs_["PCF8574"] = {"PCF8574", 16, {}};
+    builtinICs_["556"] = {"556", 14, {}};
+
+    // Comparators
+    builtinICs_["LM393"] = {"LM393", 8, {}};
+    builtinICs_["LM339"] = {"LM339", 14, {}};
 }
 
 void SemanticAnalyzer::reportError(const std::string& message, SourceLocation loc) {
