@@ -9,6 +9,7 @@ import { cornerRadius, wirePoints } from './wirePath';
 import { resistorBandColors } from './resistorBands';
 import { artFor, ComponentArt, computeArtTransform } from './componentArt';
 import { componentPinHole, componentPinHoles } from '../geometry/PinGeometry';
+import { planRotation, rotateOffset } from '../geometry/rotation';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
 import { componentSummary } from '../components/PinDatabase';
@@ -589,9 +590,15 @@ export class CircuitRenderer {
                                 this.snapPreviewHoles = [];
                             }
                         } else {
-                            // Non-IC component - snap by first pin
+                            // Non-IC component - snap by first pin (rotation-aware)
                             const pin1 = footprint.pins[0];
-                            const pin1Offset = { x: pin1.offsetX, y: pin1.offsetY };
+                            const bodyCenterOffset = { x: footprint.bodyWidth / 2, y: footprint.bodyHeight / 2 };
+                            const rotation = comp.rotation ?? 0;
+                            const pin1Offset = rotateOffset(
+                                { x: pin1.offsetX, y: pin1.offsetY },
+                                bodyCenterOffset,
+                                rotation
+                            );
                             const snapResult = snapMgr.snapComponentByPin(
                                 { x: newBaseX, y: newBaseY },
                                 pin1Offset,
@@ -602,17 +609,13 @@ export class CircuitRenderer {
                             comp.position.y = snapResult.bodyY;
                             this.isSnapped = snapResult.snapped;
                             
-                            // Show snap preview
-                            if (snapResult.snapped && snapResult.snapCol && snapResult.snapRow) {
-                                this.snapPreviewHoles = [];
-                                for (const pin of footprint.pins) {
-                                    const colOffset = Math.round(pin.offsetX / BreadboardGeometry.HOLE_SPACING);
-                                    this.snapPreviewHoles.push(
-                                        geo.getHolePosition(snapResult.snapCol + colOffset, snapResult.snapRow)
-                                    );
+                            // Show snap preview from the actual rotated pin holes
+                            this.snapPreviewHoles = [];
+                            if (snapResult.snapped) {
+                                for (let pin = 1; pin <= comp.pinCount; pin++) {
+                                    const hole = componentPinHole(comp, pin, geo);
+                                    if (hole) this.snapPreviewHoles.push(hole);
                                 }
-                            } else {
-                                this.snapPreviewHoles = [];
                             }
                         }
                     }
@@ -794,6 +797,11 @@ export class CircuitRenderer {
         }
         if (e.key === 'f' || e.key === 'F') {
             this.fitToView();
+            return;
+        }
+        if (e.key === 'r' || e.key === 'R') {
+            this.rotateSelected();
+            return;
         }
     }
 
@@ -1116,14 +1124,19 @@ export class CircuitRenderer {
         // Add components (rendered on top, checked first)
         for (const comp of this.circuitIR.components) {
             const { width, height } = this.getComponentDimensions(comp);
+            const rotated = (comp.rotation ?? 0) % 180 !== 0;
+            const w = rotated ? height : width;
+            const h = rotated ? width : height;
+            const cx = comp.position.x + width / 2;
+            const cy = comp.position.y + height / 2;
             
             this.draggables.push({
                 id: comp.id,
                 type: 'component',
-                x: comp.position.x,
-                y: comp.position.y,
-                width: width,
-                height: height,
+                x: cx - w / 2,
+                y: cy - h / 2,
+                width: w,
+                height: h,
                 parentBoardId: this.boardIdOf(comp.boardId)
             });
         }
@@ -1512,6 +1525,17 @@ export class CircuitRenderer {
         }
         
         this.drawComponentShadow(comp, category);
+
+        const rotation = comp.rotation ?? 0;
+        if (rotation !== 0) {
+            const { width, height } = this.getComponentDimensions(comp);
+            const cx = (comp.position.x + width / 2) * BASE_SCALE;
+            const cy = (comp.position.y + height / 2) * BASE_SCALE;
+            this.ctx.save();
+            this.ctx.translate(cx, cy);
+            this.ctx.rotate((rotation * Math.PI) / 180);
+            this.ctx.translate(-cx, -cy);
+        }
         
         switch (category) {
             case 'passive':
@@ -1552,6 +1576,10 @@ export class CircuitRenderer {
                 this.renderIC(comp);
                 break;
         }
+
+        if (rotation !== 0) {
+            this.ctx.restore();
+        }
     }
 
     // User-authored SVG artwork, rasterized once per URL.
@@ -1584,7 +1612,7 @@ export class CircuitRenderer {
             const hole = holes.get(index + 1);
             return hole ? { x: hole.x * BASE_SCALE, y: hole.y * BASE_SCALE } : undefined;
         });
-        const transform = computeArtTransform(art, holeList);
+        const transform = computeArtTransform(art, holeList, comp.rotation ?? 0);
         if (!transform) return false;
 
         const cos = Math.cos(transform.rotate);
@@ -1708,9 +1736,72 @@ export class CircuitRenderer {
     }
 
     /**
+     * Rotate the selected component by 90° (or the next valid angle for
+     * straddling parts). Pins must land on holes; attached wire endpoints
+     * move with their pins. Returns false when no valid rotation exists.
+     */
+    rotateSelected(): boolean {
+        if (!this.circuitIR || !this.selectedId) return false;
+        const comp = this.circuitIR.components.find(c => c.id === this.selectedId);
+        if (!comp) return false;
+        const geo = this.geometryFor(comp.boardId);
+        if (!geo) return false;
+
+        const base = comp.rotation ?? 0;
+        for (const step of [90, 180, 270, 0]) {
+            const rotation = (base + step) % 360;
+            const position = planRotation(comp, geo, rotation);
+            if (!position) continue;
+
+            const snapshot = this.cloneIR();
+            comp.rotation = rotation;
+            comp.position = position;
+
+            // Move attached wire endpoints onto the rotated pin holes.
+            for (const wire of this.circuitIR.wires) {
+                let moved = false;
+                if (wire.from.component === comp.id) {
+                    const hole = componentPinHole(comp, wire.from.pin, geo);
+                    if (hole) {
+                        wire.from.x = hole.x;
+                        wire.from.y = hole.y;
+                        moved = true;
+                    }
+                }
+                if (wire.to.component === comp.id) {
+                    const hole = componentPinHole(comp, wire.to.pin, geo);
+                    if (hole) {
+                        wire.to.x = hole.x;
+                        wire.to.y = hole.y;
+                        moved = true;
+                    }
+                }
+                if (moved) wire.waypoints = undefined;
+            }
+
+            if (snapshot) {
+                this.history.push(snapshot);
+                this.notifyHistory();
+            }
+            this.rebuildOccupancy();
+            this.rebuildDraggables();
+            this.redraw();
+            return true;
+        }
+        return false;
+    }
+
+    getSelectedRotation(): number {
+        if (!this.circuitIR || !this.selectedId) return 0;
+        const comp = this.circuitIR.components.find(c => c.id === this.selectedId);
+        return comp?.rotation ?? 0;
+    }
+
+    /**
      * Soft drop shadow under a component body (TinkerCAD-style depth).
      */
-    private drawComponentShadow(comp: ComponentIR, category: ComponentCategory): void {        const S = BASE_SCALE;
+    private drawComponentShadow(comp: ComponentIR, category: ComponentCategory): void {
+        const S = BASE_SCALE;
         const { width, height } = this.getComponentDimensions(comp);
         const x = comp.position.x * S;
         const y = comp.position.y * S;

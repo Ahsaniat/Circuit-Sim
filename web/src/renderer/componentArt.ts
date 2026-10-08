@@ -7,6 +7,10 @@ import pushButtonUrl from '../assets/components/push_button.svg';
 import batteryUrl from '../assets/components/battery_9v.svg';
 import motorUrl from '../assets/components/motor.svg';
 import icUrl from '../assets/components/ic_74HC11.svg';
+import dip8Url from '../assets/components/ic_dip8.svg';
+import dip16Url from '../assets/components/ic_dip16.svg';
+import dip20Url from '../assets/components/ic_dip20.svg';
+import dip24Url from '../assets/components/ic_dip24.svg';
 
 /**
  * User-authored component artwork.
@@ -199,6 +203,60 @@ for (const type of DIP14_TYPES) {
     COMPONENT_ART[type] = COMPONENT_ART['7411'];
 }
 
+/**
+ * Generated DIP packages in the same visual language as the DIP-14 art
+ * (body, notch, pin-1 dot, top/bottom pin rows). The printed label area is
+ * covered so the renderer can draw the real component type.
+ */
+function makeDipArt(url: string, pinCount: number): ComponentArt {
+    const per = pinCount / 2;
+    const firstCenter = 20.95;
+    const spacing = 20.9;
+    const centers = Array.from({ length: per }, (_, i) => firstCenter + i * spacing);
+    const pins: ArtPin[] = [];
+    for (let pin = 1; pin <= pinCount; pin++) {
+        // Bottom row: 1..per left to right; top row: pinCount..per+1 left to right.
+        pins.push(pin <= per
+            ? { x: centers[pin - 1], y: 62 }
+            : { x: centers[pinCount - pin], y: 0 });
+    }
+    const bodyX = 8.75;
+    const bodyW = (per - 1) * spacing + 24.4;
+    return {
+        url,
+        width: bodyX + bodyW + 6.25,
+        height: 62,
+        pins,
+        rotate: 0,
+        scaleFrom: 'both',
+        label: {
+            x: bodyX + bodyW / 2,
+            y: 31,
+            coverWidth: bodyW - 12,
+            coverHeight: 18,
+            coverColor: '#333333',
+        },
+    };
+}
+
+const DIP8_TYPES = ['555', 'NE555', '741', 'LM741', 'LM358', 'LM393'];
+const DIP16_TYPES = [
+    '7447', '7476', '74138', '74139', '74148', '74151', '74153', '74161',
+    '74165', '74173', '74HC75', '74HC283', '74HC595', '74HC4017', 'CD4511',
+    'PCF8574',
+];
+const DIP20_TYPES = ['74245', '74373', '74374'];
+const DIP24_TYPES = ['74181'];
+
+const dip8Art = makeDipArt(dip8Url, 8);
+const dip16Art = makeDipArt(dip16Url, 16);
+const dip20Art = makeDipArt(dip20Url, 20);
+const dip24Art = makeDipArt(dip24Url, 24);
+for (const type of DIP8_TYPES) COMPONENT_ART[type] = dip8Art;
+for (const type of DIP16_TYPES) COMPONENT_ART[type] = dip16Art;
+for (const type of DIP20_TYPES) COMPONENT_ART[type] = dip20Art;
+for (const type of DIP24_TYPES) COMPONENT_ART[type] = dip24Art;
+
 export function artFor(type: string): ComponentArt | undefined {
     return COMPONENT_ART[type];
 }
@@ -269,11 +327,13 @@ export interface ArtTransform {
 
 /**
  * Compute the canvas transform that maps the artwork's pin 1 and pin 2 onto
- * their holes. Pure function so the mapping is unit-testable.
+ * their holes. `extraRotation` is the component's own rotation in degrees.
+ * Pure function so the mapping is unit-testable.
  */
 export function computeArtTransform(
     art: ComponentArt,
-    holes: Array<{ x: number; y: number } | undefined>
+    holes: Array<{ x: number; y: number } | undefined>,
+    extraRotation = 0
 ): ArtTransform | null {
     const p1 = art.pins[0];
     const p2 = art.pins[1];
@@ -281,7 +341,7 @@ export function computeArtTransform(
     const h2 = holes[1];
     if (!p1 || !p2 || !h1 || !h2) return null;
 
-    const theta = (art.rotate * Math.PI) / 180;
+    const theta = ((art.rotate + extraRotation) * Math.PI) / 180;
     const cos = Math.cos(theta);
     const sin = Math.sin(theta);
     const rotatePoint = (p: ArtPin) => ({

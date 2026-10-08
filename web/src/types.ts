@@ -33,6 +33,8 @@ export interface ComponentIR {
     value?: string;  // For resistors (10k), capacitors (100uF), etc.
     /** Board this component is placed on (defaults to the first board). */
     boardId?: string;
+    /** Orientation in degrees: 0, 90, 180 or 270. */
+    rotation?: number;
 }
 
 export interface BoardIR {

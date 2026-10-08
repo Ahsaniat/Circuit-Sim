@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { COMPONENT_ART, computeArtTransform, artDisplaySize, artFor, ComponentArt } from './componentArt';
 
 /** Apply a computed transform the same way the canvas does. */
-function apply(art: ComponentArt, holes: Array<{ x: number; y: number } | undefined>, pinIndex: number) {
-    const transform = computeArtTransform(art, holes)!;
+function apply(
+    art: ComponentArt,
+    holes: Array<{ x: number; y: number } | undefined>,
+    pinIndex: number,
+    extraRotation = 0
+) {
+    const transform = computeArtTransform(art, holes, extraRotation)!;
     const pin = art.pins[pinIndex];
     const cos = Math.cos(transform.rotate);
     const sin = Math.sin(transform.rotate);
@@ -75,6 +80,17 @@ describe('computeArtTransform', () => {
         expect(third.y).toBeCloseTo(0, 4);
     });
 
+    it('maps artwork with an extra component rotation', () => {
+        const art = COMPONENT_ART.RES;
+        // Vertical holes: the horizontal artwork must rotate 90 degrees.
+        const holes = [{ x: 0, y: 0 }, { x: 0, y: 20.32 }];
+        for (let pin = 0; pin < 2; pin++) {
+            const mapped = apply(art, holes, pin, 90);
+            expect(mapped.x).toBeCloseTo(holes[pin].x, 4);
+            expect(mapped.y).toBeCloseTo(holes[pin].y, 4);
+        }
+    });
+
     it('returns null when a required pin or hole is missing', () => {
         const art = COMPONENT_ART.RES;
         expect(computeArtTransform(art, [])).toBeNull();
@@ -97,6 +113,30 @@ describe('computeArtTransform', () => {
         }
         expect(dip.pins).toHaveLength(14);
         expect(dip.label).toBeDefined();
+    });
+
+    it('maps 8/16/20/24-pin ICs to generated DIP artwork', () => {
+        expect(artFor('555')!.pins).toHaveLength(8);
+        expect(artFor('LM393')!.pins).toHaveLength(8);
+        expect(artFor('74HC595')!.pins).toHaveLength(16);
+        expect(artFor('CD4511')!.pins).toHaveLength(16);
+        expect(artFor('74373')!.pins).toHaveLength(20);
+        expect(artFor('74181')!.pins).toHaveLength(24);
+    });
+
+    it('maps every DIP-8 pin onto its hole', () => {
+        const art = artFor('555')!;
+        const holes = Array.from({ length: 8 }, (_, index) => {
+            const pin = index + 1;
+            return pin <= 4
+                ? { x: (pin - 1) * 10.16, y: 24.16 }
+                : { x: (8 - pin) * 10.16, y: 0 };
+        });
+        for (let pin = 1; pin <= 8; pin++) {
+            const mapped = apply(art, holes, pin - 1);
+            expect(mapped.x).toBeCloseTo(holes[pin - 1]!.x, 4);
+            expect(mapped.y).toBeCloseTo(holes[pin - 1]!.y, 4);
+        }
     });
 });
 

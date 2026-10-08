@@ -24,6 +24,7 @@ export const SHORTCUTS: ShortcutEntry[] = [
     { keys: 'Middle-drag', description: 'Pan canvas' },
     { keys: 'Pinch (touch)', description: 'Zoom canvas' },
     { keys: 'Click + drag', description: 'Move components / wires' },
+    { keys: 'R', description: 'Rotate selected component' },
     { keys: 'Delete', description: 'Delete selected element' },
     { keys: 'Escape', description: 'Clear selection' },
     { keys: 'Tab', description: 'Indent in editor' },

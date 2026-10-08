@@ -209,6 +209,13 @@ class App {
             this.renderer.redo();
             this.scheduleAutosave();
         });
+        document.getElementById('rotate-btn')?.addEventListener('click', () => {
+            if (this.renderer.rotateSelected()) {
+                this.scheduleAutosave();
+            } else {
+                this.toast.warning('Select a component that can rotate on the board');
+            }
+        });
     }
 
     private setupGlobalShortcuts(): void {

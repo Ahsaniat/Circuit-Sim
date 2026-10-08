@@ -12,7 +12,7 @@ export interface CircuitLayout {
     v: 1;
     /** Board positions, so a moved board stays moved after a reload. */
     boards?: Record<string, { x: number; y: number }>;
-    components: Record<string, { x: number; y: number; boardId?: string }>;
+    components: Record<string, { x: number; y: number; boardId?: string; rotation?: number }>;
     wires: Array<{
         from: { x: number; y: number };
         to: { x: number; y: number };
@@ -33,6 +33,7 @@ export function serializeLayout(ir: CircuitIR): CircuitLayout {
             x: comp.position.x,
             y: comp.position.y,
             ...(comp.boardId ? { boardId: comp.boardId } : {}),
+            ...(comp.rotation ? { rotation: comp.rotation } : {}),
         };
     }
     const wires = ir.wires.map(wire => ({
@@ -89,6 +90,7 @@ export function applyLayout(ir: CircuitIR, layout: CircuitLayout): void {
         if (!saved) continue;
         comp.position = { x: saved.x, y: saved.y };
         if (saved.boardId) comp.boardId = saved.boardId;
+        if (saved.rotation) comp.rotation = saved.rotation;
     }
     if (layout.wires.length !== ir.wires.length) return;
     for (let i = 0; i < ir.wires.length; i++) {

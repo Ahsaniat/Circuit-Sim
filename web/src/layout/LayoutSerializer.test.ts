@@ -35,6 +35,16 @@ describe('LayoutSerializer', () => {
         expect(fresh.boards[0].position).toEqual({ x: 120, y: 45 });
     });
 
+    it('round-trips component rotation', () => {
+        const ir = compile(SOURCE);
+        ir.components[0].rotation = 90;
+        const layout = serializeLayout(ir);
+
+        const fresh = compile(SOURCE);
+        applyLayout(fresh, layout);
+        expect(fresh.components[0].rotation).toBe(90);
+    });
+
     it('applies layouts saved before board positions existed', () => {
         const ir = compile(SOURCE);
         const layout = serializeLayout(ir);
