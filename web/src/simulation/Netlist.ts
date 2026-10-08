@@ -157,12 +157,24 @@ export function extractNetlist(
         uf.union(fromNode, toNode);
     });
 
-    // Closed switches short their pins.
+    // Switch state. Tactile push buttons have two internally tied pairs
+    // (1-3 and 2-4); pressing ties the pairs together. Other switches short
+    // their first two pins when closed.
     for (const comp of ir.components) {
-        if (!closedSwitches.has(comp.id)) continue;
-        if (comp.category === 'switch') {
-            const first = `pin:${pinKey(comp.id, 1)}`;
-            uf.union(first, `pin:${pinKey(comp.id, 2)}`);
+        if (comp.category !== 'switch') continue;
+        const closed = closedSwitches.has(comp.id);
+        const pin = (n: number) => `pin:${pinKey(comp.id, n)}`;
+
+        if (comp.type === 'PUSHBUTTON') {
+            if (comp.pinCount >= 4) {
+                uf.union(pin(1), pin(3));
+                uf.union(pin(2), pin(4));
+                if (closed) uf.union(pin(1), pin(2));
+            } else if (closed) {
+                uf.union(pin(1), pin(2));
+            }
+        } else if (closed) {
+            uf.union(pin(1), pin(2));
         }
     }
 

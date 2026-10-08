@@ -645,7 +645,7 @@ class IRGenerator {
     // Board geometries and per-board placement state
     private boardGeometries: Map<string, BreadboardGeometry> = new Map();
     private componentBoards: Map<string, string> = new Map();
-    private nextAvailableCols: Map<string, { top: number; bottom: number; straddling: number }> = new Map();
+    private nextAvailableCol: Map<string, number> = new Map();
     
     // Board that owns unassigned components (first declared board)
     private defaultBoardId: string | null = null;
@@ -668,7 +668,7 @@ class IRGenerator {
         this.symbols.clear();
         this.boardGeometries.clear();
         this.componentBoards = new Map(componentBoards);
-        this.nextAvailableCols.clear();
+        this.nextAvailableCol.clear();
         this.defaultBoardId = null;
         this.customPinCounts = new Map(program.customICs.map(ic => [ic.name, ic.pins.length]));
 
@@ -688,7 +688,7 @@ class IRGenerator {
                 boardIr.id,
                 new BreadboardGeometry(boardIr.position.x, boardIr.position.y)
             );
-            this.nextAvailableCols.set(boardIr.id, { top: 3, bottom: 3, straddling: 3 });
+            this.nextAvailableCol.set(boardIr.id, 3);
         }
         this.defaultBoardId = program.boards[0]?.id ?? null;
 
@@ -814,21 +814,17 @@ class IRGenerator {
     private placeComponent(
         comp: CompDecl, 
         ir: CircuitIR, 
-        placement: 'top' | 'bottom' | 'straddling',
+        _placement: 'top' | 'bottom' | 'straddling',
         preferredRow: string | undefined,
         boardId: string
     ): void {
         const geo = this.boardGeometries.get(boardId);
         if (!geo) return;
 
-        const counters = this.nextAvailableCols.get(boardId) ?? { top: 3, bottom: 3, straddling: 3 };
-        this.nextAvailableCols.set(boardId, counters);
+        const startCol = this.nextAvailableCol.get(boardId) ?? 3;
 
         const pinCount = this.resolvePinCount(comp);
         const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
-        
-        // Determine starting column based on placement type
-        const startCol = counters[placement];
         
         // Calculate placement
         const placementResult = calculatePlacement(
@@ -854,13 +850,15 @@ class IRGenerator {
         const art = artFor(comp.type);
         const display = art ? artDisplaySize(art, pinSpanX, pinSpanY) : null;
 
-        // Update next available column
+        // Update next available column. A single cursor per board keeps two
+        // components from ever sharing a column half (which would connect
+        // them electrically on a breadboard).
         const maxCol = Math.max(...placementResult.occupiedColumns);
         const occupiedSpan = maxCol - startCol + 1;
         const artColumns = display ? Math.ceil(display.width / BreadboardGeometry.HOLE_SPACING) : 0;
         const columnsNeeded = Math.max(occupiedSpan, artColumns);
         const tall = display ? display.height > 8 : false;
-        counters[placement] = startCol + columnsNeeded + (tall ? 4 : 2);
+        this.nextAvailableCol.set(boardId, startCol + columnsNeeded + (tall ? 4 : 2));
 
         // Create component IR
         ir.components.push({

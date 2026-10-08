@@ -158,6 +158,20 @@ describe('simulation: cross-board jumpers', () => {
     });
 });
 
+describe('simulation: interactive switches', () => {
+    it('lights the LED only while the push button is closed', () => {
+        const { ir, geometries } = buildIr(
+            `@battery BAT1 9V\n@pushbutton BTN1 PUSHBUTTON\n@resistor R1 330\n@led LED1 red\n@board B1 breadboard_830\n` +
+            `map (\n (BAT1 pin 1 -> BTN1 pin 1)\n (BTN1 pin 2 -> R1 pin 1)\n (R1 pin 2 -> LED1 pin 1)\n (BAT1 pin 2 -> LED1 pin 2)\n)\n`
+        );
+        const open = simulate(ir, extractNetlist(ir, geometries));
+        expect(open.litLeds.has('LED1')).toBe(false);
+
+        const closed = simulate(ir, extractNetlist(ir, geometries, new Set(['BTN1'])));
+        expect(closed.litLeds.has('LED1')).toBe(true);
+    });
+});
+
 describe('simulation: power sources', () => {
     it('drives nets from a battery', () => {
         const { ir, geometries } = buildIr(

@@ -1,7 +1,7 @@
 import { HolePosition } from './BreadboardGeometry';
 import { BreadboardGeometry } from './BreadboardGeometry';
 import { ComponentIR } from '../types';
-import { getComponentFootprint, getICPinCounts } from './ComponentFootprints';
+import { getComponentFootprint } from './ComponentFootprints';
 
 /**
  * Pin-to-hole geometry, shared by the netlist extractor, the renderer and
@@ -15,21 +15,15 @@ export function componentPinHole(
     const footprint = getComponentFootprint(comp.category ?? 'ic', comp.pinCount, comp.type);
 
     if (footprint.straddlesChannel) {
-        const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
+        // Straddling footprints declare their own rows (DIP: E/F, push
+        // button: legs in both rows); column order follows the footprint.
+        const pin = footprint.pins.find(p => p.number === pinNumber);
+        if (!pin) return null;
         const startCol = geo.getICStartColumn(comp.position.x);
-        for (let i = 0; i < bottom; i++) {
-            // Bottom pins: 1..ceil(N/2) in row F
-            if (pinNumber === i + 1) {
-                return geo.getHolePosition(startCol + i, 'F');
-            }
-        }
-        for (let i = 0; i < top; i++) {
-            // Top pins: N..ceil(N/2)+1 in row E (right-aligned for odd counts)
-            if (pinNumber === comp.pinCount - i) {
-                return geo.getHolePosition(startCol + topOffset + i, 'E');
-            }
-        }
-        return null;
+        const sameRow = footprint.pins.filter(p => p.targetRow === pin.targetRow);
+        const index = sameRow.indexOf(pin);
+        if (index < 0) return null;
+        return geo.getHolePosition(startCol + index, pin.targetRow);
     }
 
     const pin = footprint.pins.find(p => p.number === pinNumber);
