@@ -7,6 +7,8 @@ import { buildSvg } from '../export/SvgExporter';
 import { translateBoardElements } from './boardMove';
 import { cornerRadius, wirePoints } from './wirePath';
 import { resistorBandColors } from './resistorBands';
+import { artFor, ComponentArt, computeArtTransform } from './componentArt';
+import { componentPinHoles } from '../geometry/PinGeometry';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
 import { componentSummary } from '../components/PinDatabase';
@@ -1473,6 +1475,16 @@ export class CircuitRenderer {
     private renderComponent(comp: ComponentIR): void {
         const category = comp.category || 'ic';
         
+        // Prefer user-authored SVG artwork when available and loaded.
+        const art = artFor(comp.type);
+        if (art) {
+            const geo = this.geometryFor(comp.boardId);
+            const image = this.getArtImage(art.url);
+            if (geo && image && this.renderComponentArt(comp, art, image, geo)) {
+                return;
+            }
+        }
+        
         this.drawComponentShadow(comp, category);
         
         switch (category) {
@@ -1516,11 +1528,126 @@ export class CircuitRenderer {
         }
     }
 
+    // User-authored SVG artwork, rasterized once per URL.
+    private artImages = new Map<string, HTMLImageElement>();
+
+    private getArtImage(url: string): HTMLImageElement | null {
+        let image = this.artImages.get(url);
+        if (!image) {
+            image = new Image();
+            image.onload = () => this.redraw();
+            image.src = url;
+            this.artImages.set(url, image);
+        }
+        return image.complete && image.naturalWidth > 0 ? image : null;
+    }
+
+    /**
+     * Draw a component from its SVG artwork, mapped onto its pin holes.
+     * Returns false when the artwork cannot be placed (caller falls back to
+     * the procedural renderer).
+     */
+    private renderComponentArt(
+        comp: ComponentIR,
+        art: ComponentArt,
+        image: HTMLImageElement,
+        geo: BreadboardGeometry
+    ): boolean {
+        const holes = componentPinHoles(comp, geo);
+        const holeList = Array.from({ length: comp.pinCount }, (_, index) => {
+            const hole = holes.get(index + 1);
+            return hole ? { x: hole.x * BASE_SCALE, y: hole.y * BASE_SCALE } : undefined;
+        });
+        const transform = computeArtTransform(art, holeList);
+        if (!transform) return false;
+
+        const cos = Math.cos(transform.rotate);
+        const sin = Math.sin(transform.rotate);
+        const apply = (x: number, y: number) => ({
+            x: transform.translateX + transform.scaleX * (x * cos - y * sin),
+            y: transform.translateY + transform.scaleY * (x * sin + y * cos),
+        });
+
+        // Artwork bounding box in canvas units.
+        const corners = [
+            apply(0, 0),
+            apply(art.width, 0),
+            apply(art.width, art.height),
+            apply(0, art.height),
+        ];
+        const minX = Math.min(...corners.map(c => c.x));
+        const maxX = Math.max(...corners.map(c => c.x));
+        const minY = Math.min(...corners.map(c => c.y));
+        const maxY = Math.max(...corners.map(c => c.y));
+
+        // Drop shadow under the artwork
+        this.ctx.save();
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        this.ctx.shadowBlur = 6;
+        this.ctx.shadowOffsetY = 2.5;
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.10)';
+        this.roundRect(minX, minY, maxX - minX, maxY - minY, 3);
+        this.ctx.fill();
+        this.ctx.restore();
+
+        // The artwork itself
+        this.ctx.save();
+        this.ctx.translate(transform.translateX, transform.translateY);
+        this.ctx.scale(transform.scaleX, transform.scaleY);
+        this.ctx.rotate(transform.rotate);
+        this.ctx.drawImage(image, 0, 0, art.width, art.height);
+        this.ctx.restore();
+
+        // Selection highlight around the artwork
+        if (this.selectedId === comp.id) {
+            this.ctx.strokeStyle = this.palette.selection;
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([4, 2]);
+            this.roundRect(minX - 4, minY - 4, maxX - minX + 8, maxY - minY + 8, 4);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+
+        // Simulation overlay for LEDs: glow when lit, dim when dark.
+        if (comp.category === 'led' && this.simResult) {
+            const dome = apply(art.width * 0.46, art.height * 0.42);
+            const lit = this.simResult.litLeds.has(comp.id);
+            if (lit) {
+                this.ctx.save();
+                this.ctx.shadowColor = '#ff3333';
+                this.ctx.shadowBlur = 24;
+                this.ctx.fillStyle = 'rgba(255, 60, 60, 0.85)';
+                this.ctx.beginPath();
+                this.ctx.arc(dome.x, dome.y, Math.max(3, (maxX - minX) * 0.22), 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.restore();
+            } else {
+                this.ctx.fillStyle = 'rgba(10, 10, 10, 0.35)';
+                this.ctx.beginPath();
+                this.ctx.ellipse(
+                    dome.x, dome.y,
+                    Math.max(3, (maxX - minX) * 0.24), Math.max(3, (maxY - minY) * 0.3),
+                    0, 0, Math.PI * 2
+                );
+                this.ctx.fill();
+            }
+        }
+
+        // Component label
+        this.ctx.fillStyle = this.palette.componentLabel;
+        this.ctx.font = '8px sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        const label = comp.value ? `${comp.id} ${comp.value}` : comp.id;
+        this.ctx.fillText(label, (minX + maxX) / 2, maxY + 4);
+
+        return true;
+    }
+
     /**
      * Soft drop shadow under a component body (TinkerCAD-style depth).
      */
-    private drawComponentShadow(comp: ComponentIR, category: ComponentCategory): void {
-        const S = BASE_SCALE;
+    private drawComponentShadow(comp: ComponentIR, category: ComponentCategory): void {        const S = BASE_SCALE;
         const { width, height } = this.getComponentDimensions(comp);
         const x = comp.position.x * S;
         const y = comp.position.y * S;

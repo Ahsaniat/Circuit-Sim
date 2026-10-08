@@ -57,3 +57,6 @@ yarn-error.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Local drop folder for user-authored component art (copied into web/src/assets/components)
+component_svg/
