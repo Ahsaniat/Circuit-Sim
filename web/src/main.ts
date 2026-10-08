@@ -167,6 +167,13 @@ class App {
             }
         });
 
+        // Clicking a switch in simulation mode toggles it.
+        this.renderer.setOnSwitchToggle(() => {
+            if (this.simActive) {
+                this.runSimulation();
+            }
+        });
+
         // Wire up toolbar buttons
         this.setupToolbar();
         this.setupGlobalShortcuts();
@@ -265,6 +272,9 @@ class App {
             }
             this.codeEditor.clearError();
             this.renderer.render(ir);
+            // Bring the freshly compiled circuit into view instead of
+            // leaving the previous pan/zoom pointing at empty canvas.
+            this.renderer.fitToView();
             if (ir.customICs) {
                 for (const ic of ir.customICs) {
                     registerCustomIC(ic.name, ic.pins);
@@ -273,8 +283,7 @@ class App {
             this.statusBar.setStats(ir.components.length, ir.wires.length);
 
             // Extract the netlist once per compile and run the rule check.
-            this.netlist = this.buildNetlist(ir);
-            this.renderer.setNetlist(this.netlist);
+            this.netlist = this.buildNetlist(ir);            this.renderer.setNetlist(this.netlist);
             const simCheck = simulate(ir, this.netlist);
             const issues = runErc(ir, this.netlist, simCheck.unsupported);
             this.diagnostics.setIssues(issues);
@@ -348,7 +357,7 @@ class App {
         for (const board of ir.boards) {
             geometries.set(board.id, new BreadboardGeometry(board.position.x, board.position.y));
         }
-        return extractNetlist(ir, geometries);
+        return extractNetlist(ir, geometries, new Set(this.renderer.getClosedSwitches()));
     }
 
     private runSimulation(): void {

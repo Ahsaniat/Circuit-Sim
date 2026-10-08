@@ -8,7 +8,7 @@ import { translateBoardElements } from './boardMove';
 import { cornerRadius, wirePoints } from './wirePath';
 import { resistorBandColors } from './resistorBands';
 import { artFor, ComponentArt, computeArtTransform } from './componentArt';
-import { componentPinHoles } from '../geometry/PinGeometry';
+import { componentPinHole, componentPinHoles } from '../geometry/PinGeometry';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
 import { componentSummary } from '../components/PinDatabase';
@@ -131,6 +131,11 @@ export class CircuitRenderer {
     // Netlist for highlighting (set even when simulation is off)
     private netlist: Netlist | null = null;
     private hoveredNetId: number | null = null;
+
+    // Switches closed by the user while simulating (push buttons, toggles)
+    private closedSwitches = new Set<string>();
+    private onSwitchToggle: ((id: string) => void) | null = null;
+    private pointerDownScreen = { x: 0, y: 0 };
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -344,6 +349,7 @@ export class CircuitRenderer {
 
     private onPointerDown(e: PointerEvent): void {
         this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        this.pointerDownScreen = { x: e.clientX, y: e.clientY };
 
         // Two fingers: pinch zoom + pan, cancelling any element drag
         if (this.activePointers.size === 2) {
@@ -559,11 +565,10 @@ export class CircuitRenderer {
                         
                         if (footprint.straddlesChannel) {
                             // IC component - snap using IC-specific method
-                            const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
                             const firstPinOffsetX = 1;
                             const snapResult = snapMgr.snapICComponent(
                                 { x: newBaseX, y: newBaseY },
-                                bottom,
+                                comp.pinCount,
                                 firstPinOffsetX,
                                 IC_PIN_LENGTH,
                                 this.screenToBase(SNAP_RADIUS_PX)
@@ -576,11 +581,9 @@ export class CircuitRenderer {
                             // Show snap preview for all IC pins
                             if (snapResult.snapped && snapResult.snapCol) {
                                 this.snapPreviewHoles = [];
-                                for (let i = 0; i < bottom; i++) {
-                                    this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + i, 'F'));
-                                }
-                                for (let i = 0; i < top; i++) {
-                                    this.snapPreviewHoles.push(geo.getHolePosition(snapResult.snapCol + topOffset + i, 'E'));
+                                for (let pin = 1; pin <= comp.pinCount; pin++) {
+                                    const hole = componentPinHole(comp, pin, geo);
+                                    if (hole) this.snapPreviewHoles.push(hole);
                                 }
                             } else {
                                 this.snapPreviewHoles = [];
@@ -634,8 +637,13 @@ export class CircuitRenderer {
             }
             
             // Update cursor
+            const hoveredComp = element?.type === 'component' && this.circuitIR
+                ? this.circuitIR.components.find(c => c.id === element.id)
+                : undefined;
             if (element?.type === 'wire_terminal') {
                 this.canvas.style.cursor = 'crosshair';
+            } else if (hoveredComp?.category === 'switch' && this.simResult) {
+                this.canvas.style.cursor = 'pointer';
             } else if (element) {
                 this.canvas.style.cursor = 'grab';
             } else {
@@ -706,6 +714,25 @@ export class CircuitRenderer {
             this.redraw();
             this.commitHistory();
         }
+
+        // A click without movement on a switch toggles it while simulating.
+        if (this.simResult && this.selectedId) {
+            const moved = Math.hypot(
+                e.clientX - this.pointerDownScreen.x,
+                e.clientY - this.pointerDownScreen.y
+            );
+            const comp = this.circuitIR?.components.find(c => c.id === this.selectedId);
+            if (moved < 4 && comp?.category === 'switch') {
+                if (this.closedSwitches.has(comp.id)) {
+                    this.closedSwitches.delete(comp.id);
+                } else {
+                    this.closedSwitches.add(comp.id);
+                }
+                this.redraw();
+                this.onSwitchToggle?.(comp.id);
+            }
+        }
+
         this.isDragging = false;
         this.canvas.style.cursor = this.spacePressed ? 'grab' : 'default';
     }
@@ -866,6 +893,7 @@ export class CircuitRenderer {
         this.loadIR(ir);
         this.history.reset();
         this.dragSnapshot = null;
+        this.closedSwitches.clear();
         this.notifyHistory();
     }
 
@@ -907,6 +935,19 @@ export class CircuitRenderer {
     setNetlist(netlist: Netlist | null): void {
         this.netlist = netlist;
         this.hoveredNetId = null;
+    }
+
+    /** Switches the user has closed while simulating. */
+    getClosedSwitches(): ReadonlySet<string> {
+        return this.closedSwitches;
+    }
+
+    setOnSwitchToggle(fn: (id: string) => void): void {
+        this.onSwitchToggle = fn;
+    }
+
+    private isSwitchClosed(id: string): boolean {
+        return this.closedSwitches.has(id);
     }
 
     private highlightedNetId(): number | null {
@@ -1021,31 +1062,10 @@ export class CircuitRenderer {
             // Register component pins owned by this board
             for (const comp of this.circuitIR.components) {
                 if (this.boardIdOf(comp.boardId) !== boardId) continue;
-                const footprint = getComponentFootprint(comp.category || 'ic', comp.pinCount, comp.type);
-                
-                if (footprint.straddlesChannel) {
-                    // IC pins in rows E and F
-                    const { bottom, top, topOffset } = getICPinCounts(comp.pinCount);
-                    const startCol = geo.getICStartColumn(comp.position.x);
-                    
-                    for (let i = 0; i < bottom; i++) {
-                        // Bottom pins (row F)
-                        snapMgr.registerPinOccupancy(startCol + i, 'F', comp.id, i + 1);
-                    }
-                    for (let i = 0; i < top; i++) {
-                        // Top pins (row E), right-aligned for odd pin counts
-                        snapMgr.registerPinOccupancy(startCol + topOffset + i, 'E', comp.id, comp.pinCount - i);
-                    }
-                } else {
-                    // Non-IC components - calculate pin columns from position
-                    for (const pin of footprint.pins) {
-                        const pinX = comp.position.x + pin.offsetX;
-                        const pinY = comp.position.y + pin.offsetY;
-                        const col = geo.getColumnAtX(pinX);
-                        const row = geo.getRowAtY(pinY);
-                        if (col > 0 && row) {
-                            snapMgr.registerPinOccupancy(col, row, comp.id, pin.number);
-                        }
+                for (let pin = 1; pin <= comp.pinCount; pin++) {
+                    const hole = componentPinHole(comp, pin, geo);
+                    if (hole) {
+                        snapMgr.registerPinOccupancy(hole.col, hole.row, comp.id, pin);
                     }
                 }
             }
@@ -1355,33 +1375,37 @@ export class CircuitRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Top power rail: red (+) and blue (−) bus lines through the holes
+        // Top power rail: red (+) and blue (−) bus lines running beside the
+        // hole rows, not through them.
         const holesStartX = geo.holesStartX * S;
         const topPlusHole = geo.getHolePosition(1, 'TOP+');
         const topMinusHole = geo.getHolePosition(1, 'TOP-');
         const railEndX = geo.getHolePosition(numCols, 'TOP+').x * S;
+        const railOffset = 0.8 * S;
+        const topPlusLineY = topPlusHole.y * S - railOffset;
+        const topMinusLineY = topMinusHole.y * S + railOffset;
 
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = '#d9534f';
         this.ctx.beginPath();
-        this.ctx.moveTo(holesStartX, topPlusHole.y * S);
-        this.ctx.lineTo(railEndX, topPlusHole.y * S);
+        this.ctx.moveTo(holesStartX, topPlusLineY);
+        this.ctx.lineTo(railEndX, topPlusLineY);
         this.ctx.stroke();
         this.ctx.strokeStyle = '#4a7fd4';
         this.ctx.beginPath();
-        this.ctx.moveTo(holesStartX, topMinusHole.y * S);
-        this.ctx.lineTo(railEndX, topMinusHole.y * S);
+        this.ctx.moveTo(holesStartX, topMinusLineY);
+        this.ctx.lineTo(railEndX, topMinusLineY);
         this.ctx.stroke();
 
         // Rail labels at both ends
-        this.ctx.font = `bold ${10}px sans-serif`;
+        this.ctx.font = `bold 10px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.fillStyle = '#d9534f';
-        this.ctx.fillText('+', holesStartX - 7, topPlusHole.y * S + 3);
-        this.ctx.fillText('+', railEndX + 7, topPlusHole.y * S + 3);
+        this.ctx.fillText('+', holesStartX - 7, topPlusLineY + 3);
+        this.ctx.fillText('+', railEndX + 7, topPlusLineY + 3);
         this.ctx.fillStyle = '#4a7fd4';
-        this.ctx.fillText('−', holesStartX - 7, topMinusHole.y * S + 3);
-        this.ctx.fillText('−', railEndX + 7, topMinusHole.y * S + 3);
+        this.ctx.fillText('−', holesStartX - 7, topMinusLineY + 3);
+        this.ctx.fillText('−', railEndX + 7, topMinusLineY + 3);
 
         this.ctx.fillStyle = this.palette.boardHole;
         for (let col = 1; col <= numCols; col++) {
@@ -1397,27 +1421,29 @@ export class CircuitRenderer {
         const bottomPlusHole = geo.getHolePosition(1, 'BOTTOM+');
         const bottomMinusHole = geo.getHolePosition(1, 'BOTTOM-');
         const bottomRailEndX = geo.getHolePosition(numCols, 'BOTTOM+').x * S;
+        const bottomPlusLineY = bottomPlusHole.y * S - railOffset;
+        const bottomMinusLineY = bottomMinusHole.y * S + railOffset;
 
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = '#d9534f';
         this.ctx.beginPath();
-        this.ctx.moveTo(holesStartX, bottomPlusHole.y * S);
-        this.ctx.lineTo(bottomRailEndX, bottomPlusHole.y * S);
+        this.ctx.moveTo(holesStartX, bottomPlusLineY);
+        this.ctx.lineTo(bottomRailEndX, bottomPlusLineY);
         this.ctx.stroke();
         this.ctx.strokeStyle = '#4a7fd4';
         this.ctx.beginPath();
-        this.ctx.moveTo(holesStartX, bottomMinusHole.y * S);
-        this.ctx.lineTo(bottomRailEndX, bottomMinusHole.y * S);
+        this.ctx.moveTo(holesStartX, bottomMinusLineY);
+        this.ctx.lineTo(bottomRailEndX, bottomMinusLineY);
         this.ctx.stroke();
 
-        this.ctx.font = `bold ${10}px sans-serif`;
+        this.ctx.font = `bold 10px sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.fillStyle = '#d9534f';
-        this.ctx.fillText('+', holesStartX - 7, bottomPlusHole.y * S + 3);
-        this.ctx.fillText('+', bottomRailEndX + 7, bottomPlusHole.y * S + 3);
+        this.ctx.fillText('+', holesStartX - 7, bottomPlusLineY + 3);
+        this.ctx.fillText('+', bottomRailEndX + 7, bottomPlusLineY + 3);
         this.ctx.fillStyle = '#4a7fd4';
-        this.ctx.fillText('−', holesStartX - 7, bottomMinusHole.y * S + 3);
-        this.ctx.fillText('−', bottomRailEndX + 7, bottomMinusHole.y * S + 3);
+        this.ctx.fillText('−', holesStartX - 7, bottomMinusLineY + 3);
+        this.ctx.fillText('−', bottomRailEndX + 7, bottomMinusLineY + 3);
 
         this.ctx.fillStyle = this.palette.boardHole;
         for (let col = 1; col <= numCols; col++) {
@@ -1625,6 +1651,24 @@ export class CircuitRenderer {
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillText(comp.type, center.x, center.y);
+        }
+
+        // A closed switch gets a pressed look and a green status ring.
+        if (comp.category === 'switch' && this.isSwitchClosed(comp.id)) {
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+            this.ctx.beginPath();
+            this.ctx.ellipse(
+                (minX + maxX) / 2,
+                minY + (maxY - minY) * 0.38,
+                (maxX - minX) * 0.32,
+                (maxY - minY) * 0.22,
+                0, 0, Math.PI * 2
+            );
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#2ecc71';
+            this.ctx.lineWidth = 2;
+            this.roundRect(minX - 2, minY - 2, maxX - minX + 4, maxY - minY + 4, 4);
+            this.ctx.stroke();
         }
 
         // Simulation overlay for LEDs: glow when lit, dim when dark.
@@ -2391,10 +2435,17 @@ export class CircuitRenderer {
             this.ctx.fill();
             this.ctx.stroke();
             
-            // Actuator
+            // Actuator (shifted when the switch is closed)
+            const closed = this.isSwitchClosed(comp.id);
             this.ctx.fillStyle = '#1f1f1f';
-            this.roundRect(x + w * 0.4, y - 2, w * 0.2, h + 4, 1);
+            this.roundRect(x + w * 0.4, y - 2 + (closed ? 2 : 0), w * 0.2, h + 4, 1);
             this.ctx.fill();
+            if (closed) {
+                this.ctx.strokeStyle = '#2ecc71';
+                this.ctx.lineWidth = 2;
+                this.roundRect(x + w * 0.1 - 2, y - 3, w * 0.8 + 4, h + 6, 3);
+                this.ctx.stroke();
+            }
             
             if (comp.type === 'SPST') {
                 this.drawLead(x, centerY, x + w * 0.1, centerY);
