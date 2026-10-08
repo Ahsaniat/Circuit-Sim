@@ -1724,13 +1724,17 @@ export class CircuitRenderer {
             }
         }
 
-        // Component label
-        this.ctx.fillStyle = this.palette.componentLabel;
+        // Component label with a light halo so it stays readable over
+        // wires and neighbouring artwork.
+        const label = comp.value ? `${comp.id} ${comp.value}` : comp.id;
         this.ctx.font = '8px sans-serif';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
-        const label = comp.value ? `${comp.id} ${comp.value}` : comp.id;
-        this.ctx.fillText(label, (minX + maxX) / 2, maxY + 4);
+        this.ctx.lineWidth = 2.5;
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.strokeText(label, (minX + maxX) / 2, maxY + 6);
+        this.ctx.fillStyle = this.palette.componentLabel;
+        this.ctx.fillText(label, (minX + maxX) / 2, maxY + 6);
 
         return true;
     }
