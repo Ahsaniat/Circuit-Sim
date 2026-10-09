@@ -13,6 +13,9 @@ import { planRotation, rotateOffset } from '../geometry/rotation';
 import { Netlist } from '../simulation/Netlist';
 import { SimulationResult, LogicValue } from '../simulation/Simulator';
 import { componentSummary } from '../components/PinDatabase';
+import { CanvasEditBuffer, type CanvasEdit, type Endpoint } from '../sync/CanvasEdits';
+import { declarationToComponent } from '../sync/DeclarationImport';
+import { calculatePlacement } from '../geometry/ComponentFootprints';
 
 // Wire colors used while a simulation is active.
 const SIM_VALUE_COLORS: Record<string, string> = {
@@ -79,6 +82,12 @@ const DEFAULT_PALETTE: RenderPalette = {
     selection: '#0066cc',
 };
 
+/** Undo/redo entry: the scene plus the canvas edits that produced it. */
+interface HistorySnapshot {
+    ir: CircuitIR;
+    edits: CanvasEdit[];
+}
+
 export class CircuitRenderer {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
@@ -118,10 +127,17 @@ export class CircuitRenderer {
     private tooltip: HTMLDivElement | null = null;
     private hoveredComponentId: string | null = null;
 
-    // Undo/redo history (snapshot based)
-    private history = new CircuitHistory<CircuitIR>(100);
-    private dragSnapshot: CircuitIR | null = null;
+    // Undo/redo history (snapshot based; canvas edits travel with the IR)
+    private history = new CircuitHistory<HistorySnapshot>(100);
+    private dragSnapshot: HistorySnapshot | null = null;
     private onHistoryChange: (() => void) | null = null;
+
+    // Explicit canvas editing: structural changes are buffered until the
+    // user writes them back to the code.
+    private canvasEditing = false;
+    private pendingEdits = new CanvasEditBuffer();
+    private onEditsChange: (() => void) | null = null;
+    private terminalDrag: { wireIndex: number; terminal: 'from' | 'to' } | null = null;
 
     // Theme palette (re-read whenever data-theme changes)
     private palette: RenderPalette = DEFAULT_PALETTE;
@@ -390,11 +406,18 @@ export class CircuitRenderer {
             this.dragElementType = element.type;
             this.isDragging = true;
             // Snapshot before mutation so a drag can be undone as one action.
-            this.dragSnapshot = this.cloneIR();
+            this.dragSnapshot = this.snapshot();
             
             if (element.type === 'wire_terminal') {
                 // For wire terminals, no offset - move directly to mouse position
                 this.dragOffset = { x: 0, y: 0 };
+                const terminalMatch = element.id.match(/^wire_(\d+)_(from|to)$/);
+                if (terminalMatch) {
+                    this.terminalDrag = {
+                        wireIndex: parseInt(terminalMatch[1], 10),
+                        terminal: terminalMatch[2] as 'from' | 'to',
+                    };
+                }
             } else if (element.type === 'wire' && element.wireIndex !== undefined && this.circuitIR) {
                 // For wires (body), store offset from wire's 'from' position
                 const wire = this.circuitIR.wires[element.wireIndex];
@@ -771,7 +794,11 @@ export class CircuitRenderer {
             this.isSnapped = false;
             this.redraw();
             this.commitHistory();
+            if (this.terminalDrag) {
+                this.resolveTerminalEdit(this.terminalDrag);
+            }
         }
+        this.terminalDrag = null;
         this.dragElementType = null;
 
         // A click without movement on a switch toggles it while simulating.
@@ -871,22 +898,29 @@ export class CircuitRenderer {
     }
 
     /**
-     * Delete the current selection from the in-memory IR. The DSL source is
-     * not modified; layout persistence is handled by the app layer.
+     * Delete the current selection from the in-memory IR. Only available in
+     * canvas editing mode; the deletion is buffered until the user writes
+     * the canvas back to the code.
      */
     private deleteSelection(): void {
-        if (!this.circuitIR || !this.selectedId) return;
-        const snapshot = this.cloneIR();
+        if (!this.canvasEditing || !this.circuitIR || !this.selectedId) return;
+        const snapshot = this.snapshot();
         const id = this.selectedId;
         const wireMatch = id.match(/^wire_(\d+)(?:_(?:from|to))?$/);
         if (wireMatch) {
             const index = parseInt(wireMatch[1], 10);
-            if (Number.isInteger(index)) {
+            const wire = Number.isInteger(index) ? this.circuitIR.wires[index] : undefined;
+            if (wire) {
+                this.pendingEdits.recordDisconnect(
+                    { component: wire.from.component, pin: wire.from.pin },
+                    { component: wire.to.component, pin: wire.to.pin }
+                );
                 this.circuitIR.wires.splice(index, 1);
             }
         } else {
             const compIndex = this.circuitIR.components.findIndex(c => c.id === id);
             if (compIndex >= 0) {
+                this.pendingEdits.recordRemove(id);
                 this.circuitIR.components.splice(compIndex, 1);
                 this.circuitIR.wires = this.circuitIR.wires.filter(
                     w => w.from.component !== id && w.to.component !== id
@@ -898,6 +932,7 @@ export class CircuitRenderer {
             this.history.push(snapshot);
             this.notifyHistory();
         }
+        this.notifyEdits();
         this.rebuildOccupancy();
         this.rebuildDraggables();
         this.redraw();
@@ -960,6 +995,10 @@ export class CircuitRenderer {
         this.history.reset();
         this.dragSnapshot = null;
         this.closedSwitches.clear();
+        // A compile starts from the code, so edits that were never written
+        // back do not survive it.
+        this.pendingEdits.clear();
+        this.notifyEdits();
         this.notifyHistory();
     }
 
@@ -1036,6 +1075,121 @@ export class CircuitRenderer {
         this.onHistoryChange = fn;
     }
 
+    /** Called whenever the set of pending canvas edits changes. */
+    setOnEditsChange(fn: () => void): void {
+        this.onEditsChange = fn;
+    }
+
+    /** Structural canvas editing is opt-in; layout drags always work. */
+    setCanvasEditing(enabled: boolean): void {
+        this.canvasEditing = enabled;
+    }
+
+    isCanvasEditing(): boolean {
+        return this.canvasEditing;
+    }
+
+    getPendingEdits(): CanvasEdit[] {
+        return this.pendingEdits.all;
+    }
+
+    hasPendingEdits(): boolean {
+        return this.pendingEdits.count > 0;
+    }
+
+    clearPendingEdits(): void {
+        this.pendingEdits.clear();
+        this.notifyEdits();
+    }
+
+    /** Replace the pending edits (used to keep edits that failed to apply). */
+    restorePendingEdits(edits: CanvasEdit[]): void {
+        this.pendingEdits.restore(edits);
+        this.notifyEdits();
+    }
+
+    /** Ids of every component on the canvas, including pending additions. */
+    getComponentIds(): string[] {
+        return this.circuitIR ? this.circuitIR.components.map(comp => comp.id) : [];
+    }
+
+    /** Convert viewport coordinates to circuit base units. */
+    clientToBase(clientX: number, clientY: number): Position {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left - PADDING - this.panX) / this.zoom / BASE_SCALE,
+            y: (clientY - rect.top - PADDING - this.panY) / this.zoom / BASE_SCALE,
+        };
+    }
+
+    /**
+     * Add a part dropped from the palette as a structural canvas edit.
+     * The component is placed on the nearest board, aligned to holes when
+     * possible, and buffered until the user writes the canvas to code.
+     */
+    addComponentFromDeclaration(declaration: string, id: string, clientX: number, clientY: number): boolean {
+        if (!this.canvasEditing || !this.circuitIR || !declaration) return false;
+        const comp = declarationToComponent(declaration);
+        if (!comp) return false;
+        comp.id = id;
+
+        const base = this.clientToBase(clientX, clientY);
+        const board = this.boardAt(base);
+        if (!board) return false;
+        comp.boardId = board.id;
+        const geo = this.boardGeometries.get(board.id);
+        if (!geo) return false;
+
+        const footprint = getComponentFootprint(comp.category ?? 'ic', comp.pinCount, comp.type);
+        const col = Math.max(1, Math.min(BreadboardGeometry.NUM_COLS, geo.getColumnAtX(base.x)));
+        // Dropping between or beyond rows snaps to the nearest main row
+        // instead of jumping to the first one.
+        const hitRow = geo.getRowAtY(base.y);
+        const onMainRow = BreadboardGeometry.TOP_ROWS.includes(hitRow) ||
+            BreadboardGeometry.BOTTOM_ROWS.includes(hitRow);
+        const row = onMainRow ? hitRow : base.y >= geo.getHolePosition(1, 'F').y ? 'J' : 'D';
+        let placed = false;
+        for (let offset = 0; offset <= 10 && !placed; offset++) {
+            for (const candidate of [col + offset, col - offset]) {
+                if (candidate < 1 || candidate > BreadboardGeometry.NUM_COLS) continue;
+                const placement = calculatePlacement(footprint, geo, candidate, row);
+                comp.position = { x: placement.bodyX, y: placement.bodyY };
+                if (!this.hasPinCollision(comp, geo)) {
+                    placed = true;
+                    break;
+                }
+            }
+        }
+        if (!placed) comp.position = { x: base.x, y: base.y };
+
+        const snapshot = this.snapshot();
+        this.circuitIR.components.push(comp);
+        this.pendingEdits.recordAdd(comp.id, declaration);
+        this.selectedId = comp.id;
+        if (snapshot) {
+            this.history.push(snapshot);
+            this.notifyHistory();
+        }
+        this.notifyEdits();
+        this.rebuildOccupancy();
+        this.rebuildDraggables();
+        this.redraw();
+        return true;
+    }
+
+    private boardAt(pos: Position): BoardIR | undefined {
+        if (!this.circuitIR) return undefined;
+        for (const board of this.circuitIR.boards) {
+            const geo = this.boardGeometries.get(board.id);
+            if (!geo) continue;
+            if (pos.x >= geo.x && pos.x <= geo.x + geo.width &&
+                pos.y >= geo.y && pos.y <= geo.y + geo.height) {
+                return board;
+            }
+        }
+        return this.circuitIR.boards[0];
+    }
+
     canUndo(): boolean {
         return this.history.canUndo;
     }
@@ -1046,17 +1200,25 @@ export class CircuitRenderer {
 
     undo(): void {
         if (!this.circuitIR) return;
-        const previous = this.history.undo(this.circuitIR);
+        const current = this.snapshot();
+        if (!current) return;
+        const previous = this.history.undo(current);
         if (!previous) return;
-        this.loadIR(previous);
+        this.loadIR(previous.ir);
+        this.pendingEdits.restore(previous.edits);
+        this.notifyEdits();
         this.notifyHistory();
     }
 
     redo(): void {
         if (!this.circuitIR) return;
-        const next = this.history.redo(this.circuitIR);
+        const current = this.snapshot();
+        if (!current) return;
+        const next = this.history.redo(current);
         if (!next) return;
-        this.loadIR(next);
+        this.loadIR(next.ir);
+        this.pendingEdits.restore(next.edits);
+        this.notifyEdits();
         this.notifyHistory();
     }
 
@@ -1068,13 +1230,20 @@ export class CircuitRenderer {
         return JSON.parse(JSON.stringify(this.circuitIR)) as CircuitIR;
     }
 
+    /** The scene plus its pending edits, ready for the undo stack. */
+    private snapshot(): HistorySnapshot | null {
+        const ir = this.cloneIR();
+        if (!ir) return null;
+        return { ir, edits: this.pendingEdits.all };
+    }
+
     private commitHistory(): void {
         if (!this.dragSnapshot || !this.circuitIR) {
             this.dragSnapshot = null;
             return;
         }
         const before = JSON.stringify(this.dragSnapshot);
-        const after = JSON.stringify(this.circuitIR);
+        const after = JSON.stringify(this.snapshot());
         if (before !== after) {
             this.history.push(this.dragSnapshot);
             this.notifyHistory();
@@ -1084,6 +1253,10 @@ export class CircuitRenderer {
 
     private notifyHistory(): void {
         this.onHistoryChange?.();
+    }
+
+    private notifyEdits(): void {
+        this.onEditsChange?.();
     }
 
     /** Re-read theme tokens and repaint (called when the theme toggles). */
@@ -1258,6 +1431,68 @@ export class CircuitRenderer {
     }
 
     /** True when any of the component's pins would land on an occupied hole. */
+    /**
+     * After a wire terminal is dropped, express the new position as a
+     * logical connection change when the terminal landed on another pin.
+     * Bare holes stay hole-level connections that the DSL cannot carry.
+     */
+    private resolveTerminalEdit(drag: { wireIndex: number; terminal: 'from' | 'to' }): void {
+        if (!this.canvasEditing || !this.circuitIR) return;
+        const wire = this.circuitIR.wires[drag.wireIndex];
+        if (!wire) return;
+        const endpoint = drag.terminal === 'from' ? wire.from : wire.to;
+        const pin = this.componentPinAtHole(wire.boardId, endpoint.x, endpoint.y);
+        if (!pin) return;
+        if (pin.component === endpoint.component && pin.pin === endpoint.pin) return;
+
+        const oldFrom = { component: wire.from.component, pin: wire.from.pin };
+        const oldTo = { component: wire.to.component, pin: wire.to.pin };
+        endpoint.component = pin.component;
+        endpoint.pin = pin.pin;
+        const newFrom = { component: wire.from.component, pin: wire.from.pin };
+        const newTo = { component: wire.to.component, pin: wire.to.pin };
+        this.pendingEdits.recordRewire(oldFrom, oldTo, newFrom, newTo);
+        this.notifyEdits();
+    }
+
+    /**
+     * The component pin whose net contains a hole. Wire terminals sit on
+     * free holes inside the pin's column half (or on the pin's rail), never
+     * on the pin hole itself, so this is a net-membership question and the
+     * nearest such pin wins.
+     */
+    private componentPinAtHole(boardId: string | undefined, x: number, y: number): Endpoint | null {
+        if (!this.circuitIR) return null;
+        const geo = this.geometryFor(boardId);
+        if (!geo) return null;
+        const col = geo.getColumnAtX(x);
+        const row = geo.getRowAtY(y);
+        if (col <= 0 || !row) return null;
+        const isTop = BreadboardGeometry.TOP_ROWS.includes(row);
+        const isBottom = BreadboardGeometry.BOTTOM_ROWS.includes(row);
+        const isRail = BreadboardGeometry.RAIL_ROWS.includes(row);
+        const owner = this.boardIdOf(boardId);
+
+        let best: { endpoint: Endpoint; distance: number } | null = null;
+        for (const comp of this.circuitIR.components) {
+            if (this.boardIdOf(comp.boardId) !== owner) continue;
+            for (let pin = 1; pin <= comp.pinCount; pin++) {
+                const hole = componentPinHole(comp, pin, geo);
+                if (!hole) continue;
+                const sameNet =
+                    (isTop && BreadboardGeometry.TOP_ROWS.includes(hole.row) && hole.col === col) ||
+                    (isBottom && BreadboardGeometry.BOTTOM_ROWS.includes(hole.row) && hole.col === col) ||
+                    (isRail && BreadboardGeometry.RAIL_ROWS.includes(hole.row) && hole.row === row);
+                if (!sameNet) continue;
+                const distance = Math.abs(hole.x - x) + Math.abs(hole.y - y);
+                if (!best || distance < best.distance) {
+                    best = { endpoint: { component: comp.id, pin }, distance };
+                }
+            }
+        }
+        return best ? best.endpoint : null;
+    }
+
     private hasPinCollision(comp: ComponentIR, geo: BreadboardGeometry): boolean {
         const snapMgr = this.snapManagerFor(comp.boardId);
         if (!snapMgr) return false;
@@ -1960,7 +2195,7 @@ export class CircuitRenderer {
             const position = planRotation(comp, geo, rotation);
             if (!position) continue;
 
-            const snapshot = this.cloneIR();
+            const snapshot = this.snapshot();
             comp.rotation = rotation;
             comp.position = position;
 
