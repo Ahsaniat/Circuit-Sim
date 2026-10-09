@@ -25,7 +25,9 @@ export const SHORTCUTS: ShortcutEntry[] = [
     { keys: 'Pinch (touch)', description: 'Zoom canvas' },
     { keys: 'Click + drag', description: 'Move components / wires' },
     { keys: 'R', description: 'Rotate selected component' },
-    { keys: 'Delete', description: 'Delete selected element' },
+    { keys: 'E', description: 'Toggle canvas editing (add / remove / rewire)' },
+    { keys: 'Ctrl + Shift + U', description: 'Write canvas edits into the code' },
+    { keys: 'Delete', description: 'Delete selected element (canvas editing)' },
     { keys: 'Escape', description: 'Clear selection' },
     { keys: 'Tab', description: 'Indent in editor' },
 ];

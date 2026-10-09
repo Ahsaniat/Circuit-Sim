@@ -25,6 +25,7 @@ import { runErc } from './erc/Erc';
 import { DiagnosticsPanel } from './ui/DiagnosticsPanel';
 import { buildBomCsv } from './export/Bom';
 import { clearCustomICs, registerCustomIC } from './components/PinDatabase';
+import { applyCanvasEdits } from './sync/CanvasEdits';
 import { buildShareUrl, readShareHash } from './share/Permalink';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
@@ -63,6 +64,7 @@ class App {
     private pendingLayout: CircuitLayout | null = null;
     private autosaveTimer: number | null = null;
     private simActive = false;
+    private canvasEditing = false;
     private netlist: Netlist | null = null;
     private diagnostics: DiagnosticsPanel;
 
@@ -72,6 +74,10 @@ class App {
 
         // Core renderer
         this.renderer = new CircuitRenderer(canvas);
+
+        // Canvas editing is opt-in and remembered across sessions.
+        this.canvasEditing = localStorage.getItem('circuitsim-canvas-edit') === 'on';
+        this.renderer.setCanvasEditing(this.canvasEditing);
 
         // Theme
         this.theme = new Theme();
@@ -153,6 +159,25 @@ class App {
             e.preventDefault();
             const code = e.dataTransfer?.getData('text/plain');
             if (!code) return;
+
+            if (this.canvasEditing) {
+                // Dropping on the board is a canvas edit: the code stays
+                // untouched until the user asks for Update code.
+                const used = new Set([
+                    ...collectUsedIds(this.codeEditor.value),
+                    ...this.renderer.getComponentIds(),
+                ]);
+                const declaration = makeUniqueId(code, used).trim();
+                const id = declaration.match(/^@\w+\s+([A-Za-z_]\w*)/)?.[1];
+                if (!id || !this.renderer.addComponentFromDeclaration(declaration, id, e.clientX, e.clientY)) {
+                    this.toast.error('Could not place that component on the board');
+                    return;
+                }
+                this.toast.info(`Added ${id} to the board. Use Update code to keep it.`);
+                this.syncEditButtons();
+                return;
+            }
+
             this.insertComponentExample(code);
             this.compile();
             this.toast.success('Component inserted');
@@ -166,6 +191,8 @@ class App {
                 this.runSimulation();
             }
         });
+
+        this.renderer.setOnEditsChange(() => this.syncEditButtons());
 
         // Clicking a switch in simulation mode toggles it.
         this.renderer.setOnSwitchToggle(() => {
@@ -181,6 +208,7 @@ class App {
         // Initial compile
         this.compile();
         this.syncHistoryButtons();
+        this.syncEditButtons();
 
         if (sharedCode) {
             this.toast.success('Shared circuit loaded');
@@ -192,6 +220,8 @@ class App {
     private setupToolbar(): void {
         document.getElementById('compile-btn')?.addEventListener('click', () => this.compile());
         document.getElementById('compile-btn-2')?.addEventListener('click', () => this.compile());
+        document.getElementById('edit-btn')?.addEventListener('click', () => this.toggleCanvasEditing());
+        document.getElementById('apply-edits-btn')?.addEventListener('click', () => this.updateCodeFromCanvas());
         document.getElementById('sim-btn')?.addEventListener('click', () => this.toggleSimulation());
         document.getElementById('clear-btn')?.addEventListener('click', () => this.clear());
         document.getElementById('save-btn')?.addEventListener('click', () => this.save());
@@ -220,6 +250,23 @@ class App {
 
     private setupGlobalShortcuts(): void {
         document.addEventListener('keydown', (e) => {
+            const target = e.target as HTMLElement | null;
+            const typing = !!target && (target.isContentEditable ||
+                target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+
+            // E — toggle canvas editing (never while typing)
+            if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'e' || e.key === 'E')) {
+                if (typing) return;
+                e.preventDefault();
+                this.toggleCanvasEditing();
+                return;
+            }
+            // Ctrl+Shift+U — write canvas edits into the code
+            if (e.ctrlKey && e.shiftKey && (e.key === 'U' || e.key === 'u')) {
+                e.preventDefault();
+                this.updateCodeFromCanvas();
+                return;
+            }
             // Ctrl+S — Save
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
@@ -272,6 +319,7 @@ class App {
         this.statusBar.setStatus('Compiling...', 'compiling');
 
         try {
+            const discardedEdits = this.renderer.hasPendingEdits();
             const ir: CircuitIR = compile(code);
             if (this.pendingLayout) {
                 applyLayout(ir, this.pendingLayout);
@@ -279,6 +327,9 @@ class App {
             }
             this.codeEditor.clearError();
             this.renderer.render(ir);
+            if (discardedEdits) {
+                this.toast.warning('Canvas edits were discarded by compiling; use Update code to keep them.');
+            }
             // Bring the freshly compiled circuit into view instead of
             // leaving the previous pan/zoom pointing at empty canvas.
             this.renderer.fitToView();
@@ -350,6 +401,56 @@ class App {
         this.toast.info(`Inserted: ${code}`);
     }
 
+    private toggleCanvasEditing(): void {
+        this.canvasEditing = !this.canvasEditing;
+        localStorage.setItem('circuitsim-canvas-edit', this.canvasEditing ? 'on' : 'off');
+        this.renderer.setCanvasEditing(this.canvasEditing);
+        this.syncEditButtons();
+        this.toast.info(this.canvasEditing
+            ? 'Canvas editing on: add, remove and rewire parts, then Update code'
+            : 'Canvas editing off');
+    }
+
+    private syncEditButtons(): void {
+        const editBtn = document.getElementById('edit-btn');
+        if (editBtn) {
+            editBtn.classList.toggle('active', this.canvasEditing);
+            editBtn.setAttribute('aria-pressed', String(this.canvasEditing));
+        }
+        const applyBtn = document.getElementById('apply-edits-btn') as HTMLButtonElement | null;
+        if (!applyBtn) return;
+        const count = this.renderer.getPendingEdits().length;
+        applyBtn.disabled = count === 0;
+        applyBtn.classList.toggle('tb-btn-dirty', count > 0);
+        applyBtn.title = count > 0
+            ? `Write ${count} canvas edit${count === 1 ? '' : 's'} into the code (Ctrl+Shift+U)`
+            : 'No canvas edits to write';
+    }
+
+    /**
+     * Write the buffered canvas edits into the editor source. Edits the
+     * patcher cannot apply stay pending and are reported, never dropped.
+     */
+    private updateCodeFromCanvas(): void {
+        const edits = this.renderer.getPendingEdits();
+        if (edits.length === 0) return;
+
+        const result = applyCanvasEdits(this.codeEditor.value, edits);
+        if (result.applied.length > 0) {
+            this.codeEditor.value = result.code;
+        }
+        this.renderer.clearPendingEdits();
+        this.compile();
+        if (result.failed.length > 0) {
+            this.renderer.restorePendingEdits(result.failed.map(failure => failure.edit));
+            this.toast.warning(
+                `${result.applied.length} edit(s) written; ${result.failed.length} could not be applied and stay pending`
+            );
+        } else {
+            this.toast.success(`Code updated with ${result.applied.length} canvas edit${result.applied.length === 1 ? '' : 's'}`);
+        }
+    }
+
     private toggleSimulation(): void {
         this.simActive = !this.simActive;
         if (this.simActive) {
@@ -403,6 +504,9 @@ class App {
     }
 
     private save(): void {
+        if (this.renderer.hasPendingEdits()) {
+            this.toast.warning('Canvas edits are not in the code yet; use Update code first to keep them');
+        }
         const code = this.codeEditor.value;
         const ir = this.renderer.getIR();
         const layout = ir ? serializeLayout(ir) : null;
