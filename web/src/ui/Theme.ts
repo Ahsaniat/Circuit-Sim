@@ -16,7 +16,7 @@ export class Theme {
 
     constructor() {
         const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-        this.mode = saved === 'light' ? 'light' : 'dark';
+        this.mode = saved === 'dark' ? 'dark' : 'light';
         this.apply();
     }
 
