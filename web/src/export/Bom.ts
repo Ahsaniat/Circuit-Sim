@@ -1,12 +1,13 @@
 import { CircuitIR } from '../types';
 import { componentSummary } from '../components/PinDatabase';
+import { dict } from '../util/dict';
 
 /**
  * Bill of materials export. Groups identical parts (same type and value)
  * and lists their references, the way a parts order would be assembled.
  */
 
-const CATEGORY_LABELS: Record<string, string> = {
+const CATEGORY_LABELS: Record<string, string> = dict({
     ic: 'Integrated circuit',
     passive: 'Passive',
     diode: 'Diode',
@@ -19,7 +20,7 @@ const CATEGORY_LABELS: Record<string, string> = {
     motor: 'Motor',
     power: 'Power',
     crystal: 'Crystal',
-};
+});
 
 function csvCell(value: string): string {
     if (/[",\n]/.test(value)) {

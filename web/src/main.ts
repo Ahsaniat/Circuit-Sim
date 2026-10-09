@@ -24,7 +24,7 @@ import { simulate } from './simulation/Simulator';
 import { runErc } from './erc/Erc';
 import { DiagnosticsPanel } from './ui/DiagnosticsPanel';
 import { buildBomCsv } from './export/Bom';
-import { registerCustomIC } from './components/PinDatabase';
+import { clearCustomICs, registerCustomIC } from './components/PinDatabase';
 import { buildShareUrl, readShareHash } from './share/Permalink';
 
 const DEFAULT_CODE = `// LED Circuit with Logic Gates
@@ -282,6 +282,9 @@ class App {
             // Bring the freshly compiled circuit into view instead of
             // leaving the previous pan/zoom pointing at empty canvas.
             this.renderer.fitToView();
+            // Rebuild the pin registry from scratch so definitions from an
+            // earlier compile cannot shadow this circuit's components.
+            clearCustomICs();
             if (ir.customICs) {
                 for (const ic of ir.customICs) {
                     registerCustomIC(ic.name, ic.pins);

@@ -1,4 +1,5 @@
 import { CircuitIR, BoardIR, Wire, Position } from '../types';
+import { dict } from '../util/dict';
 import { BreadboardGeometry } from '../geometry/BreadboardGeometry';
 import { 
     ComponentCategory, 
@@ -75,8 +76,11 @@ interface CustomICDef {
 
 const KEYWORDS = new Set(['def', 'map', 'pin', 'input', 'output', 'gnd', 'vcc']);
 
+/** Upper bound on pins a custom IC may declare. */
+const MAX_CUSTOM_IC_PINS = 64;
+
 // Component type keywords that can be used with @keyword syntax
-const COMPONENT_KEYWORDS: Record<string, { category: ComponentCategory; defaultType: string; pinCount: number }> = {
+const COMPONENT_KEYWORDS: Record<string, { category: ComponentCategory; defaultType: string; pinCount: number }> = dict({
     // Passive components (2 pins)
     'resistor': { category: 'passive', defaultType: 'RES', pinCount: 2 },
     'capacitor': { category: 'passive', defaultType: 'CAP', pinCount: 2 },
@@ -161,10 +165,10 @@ const COMPONENT_KEYWORDS: Record<string, { category: ComponentCategory; defaultT
 
     // Crystal
     'crystal': { category: 'crystal', defaultType: 'CRYSTAL', pinCount: 2 },
-};
+});
 
 // Built-in IC pin counts (extended)
-const BUILTIN_ICS: Record<string, number> = {
+const BUILTIN_ICS: Record<string, number> = dict({
     // 74xx series - basic gates
     '7400': 14, '7402': 14, '7404': 14, '7408': 14,
     '7410': 14, '7411': 14, '7420': 14, '7421': 14,
@@ -211,7 +215,7 @@ const BUILTIN_ICS: Record<string, number> = {
     'DC': 2, 'SERVO': 3,
     'BATTERY': 2, 'REGULATOR': 3,
     'CRYSTAL': 2,
-};
+});
 
 export class CompileError extends Error {
     constructor(message: string, public line: number, public column: number) {
@@ -583,6 +587,13 @@ class Parser {
             if (typeToken.type === 'KEYWORD' && ['input', 'output', 'gnd', 'vcc'].includes(typeToken.lexeme)) {
                 this.advance();
                 pins.push({ name: pinName.lexeme, type: typeToken.lexeme });
+                if (pins.length > MAX_CUSTOM_IC_PINS) {
+                    throw new CompileError(
+                        `IC '${nameToken.lexeme}' exceeds the ${MAX_CUSTOM_IC_PINS}-pin limit for custom components`,
+                        pinName.line,
+                        pinName.column
+                    );
+                }
             } else {
                 throw new CompileError('Expected pin type (input, output, gnd, vcc)', typeToken.line, typeToken.column);
             }
@@ -1128,11 +1139,11 @@ export function compile(source: string): CircuitIR {
 }
 
 // Connection-point counts per board type, used for pin-range validation.
-const BOARD_PIN_COUNTS: Record<string, number> = {
+const BOARD_PIN_COUNTS: Record<string, number> = dict({
     'breadboard_830': 830,
     'breadboard_400': 400,
     'breadboard_170': 170,
-};
+});
 
 interface SymbolInfo {
     kind: 'component' | 'board';

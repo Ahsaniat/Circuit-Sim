@@ -11,6 +11,7 @@ import dip8Url from '../assets/components/ic_dip8.svg';
 import dip16Url from '../assets/components/ic_dip16.svg';
 import dip20Url from '../assets/components/ic_dip20.svg';
 import dip24Url from '../assets/components/ic_dip24.svg';
+import { dict } from '../util/dict';
 
 /**
  * User-authored component artwork.
@@ -47,7 +48,7 @@ export interface ComponentArt {
     label?: ArtLabel;
 }
 
-export const COMPONENT_ART: Record<string, ComponentArt> = {
+export const COMPONENT_ART: Record<string, ComponentArt> = dict({
     RES: {
         url: resistorUrl,
         width: 96,
@@ -186,7 +187,7 @@ export const COMPONENT_ART: Record<string, ComponentArt> = {
         scaleFrom: 'both',
         label: { x: 83.75, y: 31.5, coverWidth: 80, coverHeight: 18, coverColor: '#333333' },
     },
-};
+});
 
 /**
  * Every 14-pin DIP shares the same package artwork; the printed type is

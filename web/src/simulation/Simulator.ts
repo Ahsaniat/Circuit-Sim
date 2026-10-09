@@ -1,4 +1,5 @@
 import { CircuitIR } from '../types';
+import { dict } from '../util/dict';
 import { Netlist } from './Netlist';
 
 /**
@@ -33,7 +34,7 @@ interface GateDef {
  * Pin-level gate maps for the 74xx family. Pins not listed (power, unused
  * gates) are ignored.
  */
-const GATE_MODELS: Record<string, GateDef[]> = {
+const GATE_MODELS: Record<string, GateDef[]> = dict({
     '7400': quad2('NAND'),
     '7408': quad2('AND'),
     '7432': quad2('OR'),
@@ -63,7 +64,7 @@ const GATE_MODELS: Record<string, GateDef[]> = {
         { inputs: [1, 2, 4, 5], output: 6, op: 'AND' },
         { inputs: [9, 10, 12, 13], output: 8, op: 'AND' },
     ],
-};
+});
 
 function quad2(op: GateOp): GateDef[] {
     return [

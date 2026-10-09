@@ -160,3 +160,38 @@ describe('multi-board layouts', () => {
         expect(ir.components.filter(c => c.boardId === 'B2')).toHaveLength(0);
     });
 });
+
+describe('robustness: prototype-chain names', () => {
+    it('rejects prototype keys as component types with a clean diagnostic', () => {
+        for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+            try {
+                compile(`@board B1 breadboard_830\n@comp X ${type}\n`);
+                expect.unreachable(`compile should throw for '${type}'`);
+            } catch (err) {
+                expect(err).toBeInstanceOf(CompileError);
+                expect((err as CompileError).message).toContain(`Unknown component type: '${type}'`);
+            }
+        }
+    });
+
+    it('rejects prototype keys as directives', () => {
+        try {
+            compile('@constructor R1 330\n');
+            expect.unreachable('compile should throw');
+        } catch (err) {
+            expect(err).toBeInstanceOf(CompileError);
+            expect((err as CompileError).message).toContain("Unknown directive '@constructor'");
+        }
+    });
+
+    it('caps custom IC pin counts', () => {
+        const pins = Array.from({ length: 65 }, (_, i) => `P${i} -> input`).join(', ');
+        try {
+            compile(`def BigIC (${pins})\n@board B1 breadboard_830\n`);
+            expect.unreachable('compile should throw');
+        } catch (err) {
+            expect(err).toBeInstanceOf(CompileError);
+            expect((err as CompileError).message).toContain('64-pin limit');
+        }
+    });
+});

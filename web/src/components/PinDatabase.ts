@@ -4,6 +4,8 @@
  * unknown pins simply have no function reported.
  */
 
+import { dict } from '../util/dict';
+
 export type PinDirection = 'input' | 'output' | 'power' | 'ground' | 'passive' | 'nc';
 
 export interface PinInfo {
@@ -11,7 +13,7 @@ export interface PinInfo {
     dir: PinDirection;
 }
 
-export const IC_SUMMARIES: Record<string, string> = {
+export const IC_SUMMARIES: Record<string, string> = dict<string>({
     '7400': 'Quad 2-input NAND',
     '7402': 'Quad 2-input NOR',
     '7404': 'Hex inverter',
@@ -67,7 +69,7 @@ export const IC_SUMMARIES: Record<string, string> = {
     '74HC4017': 'Decade counter / decoder (HC)',
     'CD4511': 'BCD to 7-segment decoder',
     'PCF8574': 'I2C I/O expander',
-};
+});
 
 function gate14(fn: (n: number) => string, dirs: Array<[number[], PinDirection]>): Record<number, PinInfo> {
     const pins: Record<number, PinInfo> = {};
@@ -97,7 +99,7 @@ const quad2 = (prefix: string): Record<number, PinInfo> => {
     return pins;
 };
 
-export const IC_PINS: Record<string, Record<number, PinInfo>> = {
+export const IC_PINS: Record<string, Record<number, PinInfo>> = dict<Record<number, PinInfo>>({
     '7400': quad2(''),
     '7408': quad2(''),
     '7432': quad2(''),
@@ -198,9 +200,18 @@ export const IC_PINS: Record<string, Record<number, PinInfo>> = {
         5: { fn: 'IN2+', dir: 'input' }, 6: { fn: 'IN2-', dir: 'input' },
         7: { fn: 'OUT2', dir: 'output' }, 8: { fn: 'VCC', dir: 'power' },
     },
-};
+});
 
 const CUSTOM_IC_PINS = new Map<string, Record<number, PinInfo>>();
+
+/**
+ * Drop definitions from a previous compile. Called before registering the
+ * current program's custom ICs so stale names can neither shadow built-in
+ * pin info nor accumulate for the life of the session.
+ */
+export function clearCustomICs(): void {
+    CUSTOM_IC_PINS.clear();
+}
 
 /** Register pins from a `def` declaration so tooltips/ERC know them. */
 export function registerCustomIC(name: string, pins: Array<{ name: string; type: string }>): void {

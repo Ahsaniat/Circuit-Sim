@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { componentSummary, outputPins, pinFunction, pinInfo } from './PinDatabase';
+import {
+    clearCustomICs,
+    componentSummary,
+    outputPins,
+    pinFunction,
+    pinInfo,
+    registerCustomIC,
+} from './PinDatabase';
 
 describe('PinDatabase', () => {
     it('knows gate pin functions', () => {
@@ -31,5 +38,15 @@ describe('PinDatabase', () => {
     it('returns nothing for unknown pins', () => {
         expect(pinFunction('7408', 99)).toBeUndefined();
         expect(pinFunction('NOT_A_CHIP', 1)).toBeUndefined();
+    });
+
+    it('drops custom definitions when the registry is cleared', () => {
+        registerCustomIC('MYCHIP', [{ name: 'A', type: 'input' }]);
+        expect(componentSummary('MYCHIP')).toBe('Custom IC');
+        expect(pinFunction('MYCHIP', 1)).toBe('A');
+
+        clearCustomICs();
+        expect(componentSummary('MYCHIP')).toBeUndefined();
+        expect(pinFunction('MYCHIP', 1)).toBeUndefined();
     });
 });
