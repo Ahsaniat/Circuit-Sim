@@ -6,21 +6,21 @@
 
 # CircuitSim
 
-**Write a circuit in code, watch it land on a breadboard, simulate it, and export it.** CircuitSim is a small domain-specific language for describing electronic circuits with real 74xx ICs, a compiler that places every part on a virtual 830-point breadboard, a digital simulator that lights the LEDs, and an electrical rule check that catches wiring mistakes before you build them.
+**Write a circuit in code, then watch it land on a breadboard.** CircuitSim is a small domain-specific language for electronic circuits built around real 74xx chips. The compiler resolves IC pinouts and places every part on a virtual 830-point breadboard. Press Simulate and the solver lights the LEDs. An electrical rule check reports wiring mistakes before you reach for real hardware.
 
 ![CircuitSim simulating a battery + LED circuit with live wire states](__docs__/screenshots/hero-simulation.png)
 
 ## What it does
 
-**Compile a DSL.** Declare components and connections in a readable syntax; the compiler resolves IC pinouts, places parts on the breadboard and routes the wires. Multiple breadboards are supported, each with its own components, joined by jumper wires.
+**Compile a DSL.** Declare components and the connections between them in a readable syntax. The compiler resolves IC pinouts, places each part on the breadboard and routes the wires. Several breadboards can sit side by side, joined by jumper wires.
 
-**Simulate the result.** Toggle Simulate and the canvas comes alive: wires turn green for logic high and blue for logic low, LEDs glow, buzzers show sound arcs, and oscillating circuits are reported instead of hanging.
+**Simulate the result.** Toggle Simulate and the canvas comes alive. Wires turn green for logic high and blue for logic low. LEDs glow, and buzzers show sound arcs. A circuit that oscillates is reported instead of hanging the page.
 
-**Catch mistakes early.** The ERC flags shorted nets, disconnected IC power pins, LEDs without series resistors, floating parts, output contention and missing power sources, right under the editor.
+**Catch mistakes early.** The ERC panel sits under the editor. Shorted nets and disconnected IC power pins show up immediately, and so does a missing power source. An LED without its series resistor gets flagged too.
 
-**Work visually.** Drag components and wires; they snap to holes with magnetic feedback. Press `R` to rotate a part (its pins stay on holes and attached wires follow), click switches and buttons while simulating to press them, and rely on undo/redo, autosave, fit-to-view, panning and touch gestures.
+**Work visually.** Drag components and wires; they snap to holes with magnetic feedback. Press `R` to rotate a part: its pins stay on holes and attached wires follow. Click switches and buttons while simulating to press them. Undo and redo, autosave, fit-to-view, panning and touch gestures are all supported.
 
-**Share and export.** Full-circuit PNG, vector SVG, a grouped BOM as CSV, and permalinks that encode the whole circuit in the URL.
+**Share and export.** Save the whole circuit as a PNG or as vector SVG. The BOM exports as grouped CSV, and a permalink encodes the circuit in the URL.
 
 ## Quick start
 
@@ -99,7 +99,7 @@ map (
 
 ## Simulation and ERC
 
-The simulator extracts an electrical netlist from the physical placement — column halves, full-width power rails, pins, wires, closed switches and battery terminals — then evaluates to a fixed point with four values: `0`, `1`, `X` (unknown/conflict) and `Z` (floating).
+The simulator builds an electrical netlist from the physical placement. Column halves, full-width power rails, pins, wires, closed switches and battery terminals all become nodes. It then evaluates the netlist to a fixed point using four values: `0`, `1`, `X` for an unknown or conflicting net, and `Z` for floating.
 
 | Status | Components |
 | :--- | :--- |
@@ -108,34 +108,57 @@ The simulator extracts an electrical netlist from the physical placement — col
 
 ## Screenshots
 
-**ERC diagnostics** — problems appear under the editor and in the status bar.
+**ERC diagnostics.** Problems appear under the editor and in the status bar.
 
 ![ERC diagnostics panel](__docs__/screenshots/erc-diagnostics.png)
 
-**Net highlighting** — hovering a wire lights up its whole electrical net.
+**Net highlighting.** Hover a wire and its whole electrical net lights up.
 
 ![Net highlighting](__docs__/screenshots/net-highlight.png)
 
-**Light theme** — the canvas follows the theme through CSS custom properties.
+**Simulation.** Wires turn green for logic high and blue for logic low, and the LED lights up when current flows.
+
+![Simulation overlay on a battery + LED circuit](__docs__/screenshots/simulation-led.png)
+
+**Two boards.** A battery on the first board powers both LEDs through cross-board jumper wires.
+
+![Two breadboards with cross-board jumpers](__docs__/screenshots/two-boards-simulation.png)
+
+**Colour-coded jumpers.** Wire colours stay readable across both boards.
+
+![Two boards with colour-coded jumper wires](__docs__/screenshots/tinkercad-style-wires.png)
+
+**Boards on the move.** Drag a board and its components travel with it while the jumper wires follow.
+
+![A board being dragged with its wires following](__docs__/screenshots/moved-board-wires-follow.png)
+
+**Wire routing.** Drag a wire and it snaps back to the nearest holes.
+
+![A wire being dragged](__docs__/screenshots/icons-and-drag.png)
+
+**Parts worth browsing.** Hover any component for its name and a short description.
+
+![Component showcase with a hover tooltip](__docs__/screenshots/components-showcase.png)
+
+**Inline diagnostics.** A typo is underlined in the editor, and the message appears in a toast and the error panel.
+
+![Inline compile diagnostics in the editor](__docs__/screenshots/inline-error.png)
+
+**Light theme.** The canvas follows the theme through CSS custom properties.
 
 ![Light theme](__docs__/screenshots/light-canvas.png)
 
-<details>
-<summary><b>More screenshots</b></summary>
+**Dark theme.** The same circuit with the dark palette.
 
-| Screenshot | Shows |
-| :--- | :--- |
-| [icons-and-drag.png](__docs__/screenshots/icons-and-drag.png) | Tabler Icons palette, BOM/Share toolbar, a dragged wire |
-| [simulation-led.png](__docs__/screenshots/simulation-led.png) | Simulation overlay on a battery + LED circuit |
-| [inline-error.png](__docs__/screenshots/inline-error.png) | Inline compile diagnostics in the editor |
-| [dark-canvas.png](__docs__/screenshots/dark-canvas.png) | Dark theme canvas |
-| [app-editor.png](__docs__/screenshots/app-editor.png) | Early editor screenshot (pre-CodeMirror) |
+![Dark theme canvas](__docs__/screenshots/dark-canvas.png)
 
-</details>
+**Editor and canvas.** The CodeMirror editor sits beside the rendered breadboard.
+
+![Editor and canvas with a compiled voltage-regulator circuit](__docs__/screenshots/app-editor.png)
 
 ## Architecture
 
-The dependency arrow points one way: the UI depends on the compiler and simulation, never the reverse.
+The dependency arrow points one way. The UI depends on the compiler and the simulation engine, never the reverse.
 
 | Layer | Location | Responsibility |
 | :--- | :--- | :--- |
@@ -154,7 +177,7 @@ The dependency arrow points one way: the UI depends on the compiler and simulati
 source → lexer → parser → semantic validation → IR generation → JSON / canvas scene
 ```
 
-Both compilers are exercised against the same fixtures in `tests/conformance/`: files ending `.ok.csim` must compile, files ending `.err.csim` must fail. This keeps the two implementations honest without duplicating test suites.
+Both compilers run against the same fixtures in `tests/conformance/`. Files ending in `.ok.csim` must compile; files ending in `.err.csim` must fail. That keeps the two implementations honest without two test suites drifting apart.
 
 </details>
 
@@ -166,12 +189,12 @@ Both compilers are exercised against the same fixtures in `tests/conformance/`: 
 | C++ tests | `cmake --build build -j1 && ctest --test-dir build` |
 | Memory watcher (local) | `nohup scripts/dev/memwatch.sh &` writes `logs/memwatch.log` |
 
-CI runs the C++ build and tests, the TypeScript typecheck, the web test suite and a production build on every push and pull request.
+Every push and pull request runs the C++ build and its tests, the TypeScript typecheck, the web test suite and a production build.
 
 ## Roadmap
 
-Not implemented yet, tracked honestly: simulation models for the 555, counters and flip-flops; interactive switch toggling; SPICE netlist export; PWA/offline install; guided lessons; a visual custom-IC editor. The ERC panel lists every IC that currently lacks a model.
+Not implemented yet, and tracked honestly: simulation models for the 555, counters and flip-flops; SPICE netlist export; offline or PWA install; guided lessons; a visual editor for custom ICs. The ERC panel lists every IC that currently lacks a model.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Bundled third-party assets and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT. See [LICENSE](LICENSE) for the full text. Bundled third-party assets and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
