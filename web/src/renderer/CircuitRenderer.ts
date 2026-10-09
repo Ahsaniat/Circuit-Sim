@@ -16,6 +16,7 @@ import { componentSummary } from '../components/PinDatabase';
 import { CanvasEditBuffer, type CanvasEdit, type Endpoint } from '../sync/CanvasEdits';
 import { declarationToComponent } from '../sync/DeclarationImport';
 import { calculatePlacement } from '../geometry/ComponentFootprints';
+import { WIRE_COLORS } from '../compiler/compiler';
 
 // Wire colors used while a simulation is active.
 const SIM_VALUE_COLORS: Record<string, string> = {
@@ -42,6 +43,7 @@ const IC_BODY_HEIGHT = E_TO_F_DISTANCE - 2 * IC_PIN_LENGTH;
 const WIRE_HIT_TOLERANCE_PX = 6;
 const WIRE_TERMINAL_RADIUS_PX = 8;
 const SNAP_RADIUS_PX = 6;
+const WIRE_DRAW_SNAP_PX = 10;
 
 interface DraggableElement {
     id: string;
@@ -137,7 +139,13 @@ export class CircuitRenderer {
     private canvasEditing = false;
     private pendingEdits = new CanvasEditBuffer();
     private onEditsChange: (() => void) | null = null;
-    private terminalDrag: { wireIndex: number; terminal: 'from' | 'to' } | null = null;
+    private onNotice: ((message: string) => void) | null = null;
+    private terminalDrag: {
+        wireIndex: number;
+        terminal: 'from' | 'to';
+        originX: number;
+        originY: number;
+    } | null = null;
 
     // Theme palette (re-read whenever data-theme changes)
     private palette: RenderPalette = DEFAULT_PALETTE;
@@ -395,6 +403,11 @@ export class CircuitRenderer {
         }
         if (e.button !== 0) return;
 
+        // Shift + drag in editing mode draws a new wire from hole to hole.
+        if (e.shiftKey && this.canvasEditing && this.beginWireDraw(e)) {
+            return;
+        }
+
         const pos = this.getMousePos(e);
         const element = this.findElementAt(pos);
         
@@ -412,11 +425,19 @@ export class CircuitRenderer {
                 // For wire terminals, no offset - move directly to mouse position
                 this.dragOffset = { x: 0, y: 0 };
                 const terminalMatch = element.id.match(/^wire_(\d+)_(from|to)$/);
-                if (terminalMatch) {
-                    this.terminalDrag = {
-                        wireIndex: parseInt(terminalMatch[1], 10),
-                        terminal: terminalMatch[2] as 'from' | 'to',
-                    };
+                if (terminalMatch && this.circuitIR) {
+                    const wireIndex = parseInt(terminalMatch[1], 10);
+                    const terminal = terminalMatch[2] as 'from' | 'to';
+                    const wire = this.circuitIR.wires[wireIndex];
+                    const endpoint = terminal === 'from' ? wire?.from : wire?.to;
+                    if (endpoint) {
+                        this.terminalDrag = {
+                            wireIndex,
+                            terminal,
+                            originX: endpoint.x,
+                            originY: endpoint.y,
+                        };
+                    }
                 }
             } else if (element.type === 'wire' && element.wireIndex !== undefined && this.circuitIR) {
                 // For wires (body), store offset from wire's 'from' position
@@ -792,6 +813,9 @@ export class CircuitRenderer {
             this.snapPreviewHoles = [];
             this.snapPreviewCollision = false;
             this.isSnapped = false;
+            if (this.dragElementType === 'new_wire') {
+                this.finishWireDraw();
+            }
             this.redraw();
             this.commitHistory();
             if (this.terminalDrag) {
@@ -911,10 +935,14 @@ export class CircuitRenderer {
             const index = parseInt(wireMatch[1], 10);
             const wire = Number.isInteger(index) ? this.circuitIR.wires[index] : undefined;
             if (wire) {
-                this.pendingEdits.recordDisconnect(
-                    { component: wire.from.component, pin: wire.from.pin },
-                    { component: wire.to.component, pin: wire.to.pin }
-                );
+                // A canvas-only wire (bare holes) was never in the code, so
+                // deleting it needs no code change.
+                if (wire.from.component && wire.to.component) {
+                    this.pendingEdits.recordDisconnect(
+                        { component: wire.from.component, pin: wire.from.pin },
+                        { component: wire.to.component, pin: wire.to.pin }
+                    );
+                }
                 this.circuitIR.wires.splice(index, 1);
             }
         } else {
@@ -1080,6 +1108,11 @@ export class CircuitRenderer {
         this.onEditsChange = fn;
     }
 
+    /** Called for canvas actions the user should know about. */
+    setOnNotice(fn: (message: string) => void): void {
+        this.onNotice = fn;
+    }
+
     /** Structural canvas editing is opt-in; layout drags always work. */
     setCanvasEditing(enabled: boolean): void {
         this.canvasEditing = enabled;
@@ -1175,6 +1208,81 @@ export class CircuitRenderer {
         this.rebuildDraggables();
         this.redraw();
         return true;
+    }
+
+    /**
+     * Start drawing a wire from the hole under the pointer. Shift+drag keeps
+     * the gesture distinct from selection; the wire is only buffered once
+     * the pointer is released away from the start hole.
+     */
+    private beginWireDraw(e: PointerEvent): boolean {
+        if (!this.circuitIR) return false;
+        const pos = this.getMousePos(e);
+        const board = this.boardAt(pos);
+        if (!board) return false;
+        const geo = this.boardGeometries.get(board.id);
+        const snapMgr = this.snapManagerFor(board.id);
+        if (!geo || !snapMgr) return false;
+        const snap = snapMgr.snapPosition(pos, this.screenToBase(WIRE_DRAW_SNAP_PX));
+        if (!snap.snapped || snap.col === undefined || snap.row === undefined) return false;
+
+        this.hideTooltip();
+        const hole = geo.getHolePosition(snap.col, snap.row);
+        const wire: Wire = {
+            from: { component: '', pin: 0, x: hole.x, y: hole.y },
+            to: { component: '', pin: 0, x: hole.x, y: hole.y },
+            color: WIRE_COLORS[this.circuitIR.wires.length % WIRE_COLORS.length],
+            boardId: board.id,
+        };
+        this.dragSnapshot = this.snapshot();
+        this.circuitIR.wires.push(wire);
+        this.selectedId = `wire_${this.circuitIR.wires.length - 1}_to`;
+        this.dragElementType = 'new_wire';
+        this.isDragging = true;
+        this.dragOffset = { x: 0, y: 0 };
+        this.capturePointer(e.pointerId);
+        this.canvas.style.cursor = 'crosshair';
+        this.redraw();
+        return true;
+    }
+
+    /**
+     * Finish a drawn wire: resolve both endpoints to component pins when
+     * possible and buffer the connection for the next code write.
+     */
+    private finishWireDraw(): void {
+        if (!this.circuitIR || !this.selectedId) return;
+        const match = this.selectedId.match(/^wire_(\d+)/);
+        if (!match) return;
+        const index = parseInt(match[1], 10);
+        const wire = this.circuitIR.wires[index];
+        if (!wire) return;
+        const degenerate = Math.abs(wire.from.x - wire.to.x) < 0.01 &&
+            Math.abs(wire.from.y - wire.to.y) < 0.01;
+        if (degenerate) {
+            // A Shift+click on a single hole draws nothing.
+            this.circuitIR.wires.splice(index, 1);
+            this.selectedId = null;
+            this.rebuildDraggables();
+            return;
+        }
+        const fromPin = this.componentPinAtHole(wire.boardId, wire.from.x, wire.from.y);
+        const toPin = this.componentPinAtHole(wire.boardId, wire.to.x, wire.to.y);
+        if (fromPin) {
+            wire.from.component = fromPin.component;
+            wire.from.pin = fromPin.pin;
+        }
+        if (toPin) {
+            wire.to.component = toPin.component;
+            wire.to.pin = toPin.pin;
+        }
+        if (fromPin && toPin) {
+            this.pendingEdits.recordConnect(fromPin, toPin);
+            this.notifyEdits();
+        } else {
+            this.onNotice?.('This wire does not touch two component pins, so it stays on the canvas only');
+        }
+        this.rebuildDraggables();
     }
 
     private boardAt(pos: Position): BoardIR | undefined {
@@ -1436,13 +1544,19 @@ export class CircuitRenderer {
      * logical connection change when the terminal landed on another pin.
      * Bare holes stay hole-level connections that the DSL cannot carry.
      */
-    private resolveTerminalEdit(drag: { wireIndex: number; terminal: 'from' | 'to' }): void {
+    private resolveTerminalEdit(drag: { wireIndex: number; terminal: 'from' | 'to'; originX: number; originY: number }): void {
         if (!this.canvasEditing || !this.circuitIR) return;
         const wire = this.circuitIR.wires[drag.wireIndex];
         if (!wire) return;
         const endpoint = drag.terminal === 'from' ? wire.from : wire.to;
+        const moved = Math.abs(endpoint.x - drag.originX) > 0.01 ||
+            Math.abs(endpoint.y - drag.originY) > 0.01;
+        if (!moved) return;
         const pin = this.componentPinAtHole(wire.boardId, endpoint.x, endpoint.y);
-        if (!pin) return;
+        if (!pin) {
+            this.onNotice?.('The terminal is on a bare hole; the code connection was left unchanged');
+            return;
+        }
         if (pin.component === endpoint.component && pin.pin === endpoint.pin) return;
 
         const oldFrom = { component: wire.from.component, pin: wire.from.pin };

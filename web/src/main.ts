@@ -193,6 +193,7 @@ class App {
         });
 
         this.renderer.setOnEditsChange(() => this.syncEditButtons());
+        this.renderer.setOnNotice((message) => this.toast.info(message));
 
         // Clicking a switch in simulation mode toggles it.
         this.renderer.setOnSwitchToggle(() => {
@@ -407,7 +408,7 @@ class App {
         this.renderer.setCanvasEditing(this.canvasEditing);
         this.syncEditButtons();
         this.toast.info(this.canvasEditing
-            ? 'Canvas editing on: add, remove and rewire parts, then Update code'
+            ? 'Canvas editing on: add, remove, rewire, or Shift+drag to draw a wire, then Update code'
             : 'Canvas editing off');
     }
 
