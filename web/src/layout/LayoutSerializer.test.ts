@@ -94,3 +94,59 @@ describe('LayoutSerializer', () => {
         expect(fresh.wires[0].from).toEqual(before);
     });
 });
+
+describe('LayoutSerializer hardening', () => {
+    it('ignores non-finite and malformed component coordinates', () => {
+        const ir = compile(SOURCE);
+        const before = { ...ir.components[0].position };
+        applyLayout(ir, {
+            v: 1,
+            components: {
+                R1: { x: Number.NaN, y: 5 },
+                LED1: { x: '9' as unknown as number, y: 5 },
+            },
+            wires: [],
+        });
+        expect(ir.components[0].position).toEqual(before);
+        expect(Number.isFinite(ir.components[1].position.x)).toBe(true);
+    });
+
+    it('normalises stored rotations and ignores unknown boards', () => {
+        const ir = compile(SOURCE);
+        applyLayout(ir, {
+            v: 1,
+            components: { R1: { x: 10, y: 10, rotation: 137, boardId: 'NOPE' } },
+            wires: [],
+        });
+        expect(ir.components[0].rotation).toBe(180);
+        expect(ir.components[0].boardId).toBe(ir.boards[0].id);
+    });
+
+    it('skips malformed wire entries and leaves valid ones alone', () => {
+        const ir = compile(SOURCE);
+        const before = { ...ir.wires[0].to };
+        applyLayout(ir, {
+            v: 1,
+            components: {},
+            wires: [{ from: { x: Number.POSITIVE_INFINITY, y: 0 }, to: { x: 0, y: 0 } }],
+        });
+        expect(ir.wires[0].to).toEqual(before);
+    });
+
+    it('stores and restores prototype-named ids as plain keys', () => {
+        const source = `@board B1 breadboard_830\n@resistor __proto__ 330\n`;
+        const ir = compile(source);
+        ir.components[0].position = { x: 21, y: 12 };
+        const line = layoutToLine(serializeLayout(ir));
+        const { layout } = extractLayout(`${source}${line}\n`);
+        expect(layout).not.toBeNull();
+        const fresh = compile(source);
+        applyLayout(fresh, layout!);
+        expect(fresh.components[0].position).toEqual({ x: 21, y: 12 });
+    });
+
+    it('rejects layout metadata whose components are an array', () => {
+        const { layout } = extractLayout(`${SOURCE}\n//!layout: {"v":1,"components":[],"wires":[]}\n`);
+        expect(layout).toBeNull();
+    });
+});
