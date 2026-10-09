@@ -434,14 +434,15 @@ export class CircuitRenderer {
         const midX = (a.x + b.x) / 2;
         const midY = (a.y + b.y) / 2;
 
-        if (this.pinchState && this.pinchState.distance > 0 && distance > 0) {
+            if (this.pinchState && this.pinchState.distance > 0 && distance > 0) {
             const ratio = distance / this.pinchState.distance;
             if (Number.isFinite(ratio) && ratio > 0) {
                 this.applyZoomAround(this.zoom * ratio, midX, midY);
             }
             this.panX += midX - this.pinchState.midX;
             this.panY += midY - this.pinchState.midY;
-            this.rebuildDraggables();
+            // Hit boxes are stored in base units; pan and zoom only change
+            // the screen-to-world mapping, never the boxes themselves.
             this.redraw();
         }
         this.pinchState = { distance, midX, midY };
@@ -474,7 +475,8 @@ export class CircuitRenderer {
             this.panX += e.clientX - this.panStart.x;
             this.panY += e.clientY - this.panStart.y;
             this.panStart = { x: e.clientX, y: e.clientY };
-            this.rebuildDraggables();
+            // Hit boxes are base-unit rectangles, so panning does not
+            // invalidate them; only a redraw is needed.
             this.redraw();
             return;
         }
