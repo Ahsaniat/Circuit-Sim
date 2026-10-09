@@ -140,8 +140,14 @@ export function extractNetlist(
     const endpointNodes: Array<{ from: string; to: string; fromHole?: string; toHole?: string }> = [];
 
     ir.wires.forEach((wire, index) => {
-        const fromBoard = boardIdForSymbol(wire.from.component);
-        const toBoard = boardIdForSymbol(wire.to.component);
+        // Canvas-drawn wires may have no component reference; they belong
+        // to the wire's own board.
+        const fromBoard = wire.from.component
+            ? boardIdForSymbol(wire.from.component)
+            : (wire.boardId ?? defaultBoardId);
+        const toBoard = wire.to.component
+            ? boardIdForSymbol(wire.to.component)
+            : (wire.boardId ?? defaultBoardId);
         const fromGeo = fromBoard ? geometries.get(fromBoard) : undefined;
         const toGeo = toBoard ? geometries.get(toBoard) : undefined;
         const fromHole = fromGeo ? wireEndpointHole(wire.from, fromGeo) : null;

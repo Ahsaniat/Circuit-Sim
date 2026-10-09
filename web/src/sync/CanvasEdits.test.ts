@@ -116,6 +116,69 @@ describe('applyCanvasEdits: rewires', () => {
     });
 });
 
+describe('applyCanvasEdits: new connections', () => {
+    it('inserts a new connection into the first map block', () => {
+        const { code, failed } = applyCanvasEdits(SOURCE, [
+            { kind: 'connect', from: { component: 'R1', pin: 1 }, to: { component: 'LED1', pin: 2 } },
+        ]);
+        expect(failed).toHaveLength(0);
+        expect(code).toContain('(R1 pin 1 -> LED1 pin 2)');
+    });
+
+    it('is a no-op when the connection already exists in either spelling', () => {
+        const { code, failed } = applyCanvasEdits(SOURCE, [
+            { kind: 'connect', from: { component: 'LED1', pin: 1 }, to: { component: 'BAT1', pin: 1 } },
+        ]);
+        expect(failed).toHaveLength(0);
+        const arrows = (text: string) => text.match(/->/g)?.length ?? 0;
+        expect(arrows(code)).toBe(arrows(SOURCE));
+    });
+
+    it('creates a map block when the source has none', () => {
+        const source = `@resistor R1 330\n@led LED1 red\n@board B1 breadboard_830\n`;
+        const { code, failed } = applyCanvasEdits(source, [
+            { kind: 'connect', from: { component: 'R1', pin: 2 }, to: { component: 'LED1', pin: 1 } },
+        ]);
+        expect(failed).toHaveLength(0);
+        expect(code).toContain('map (');
+        expect(code).toContain('(R1 pin 2 -> LED1 pin 1)');
+    });
+});
+
+describe('CanvasEditBuffer: new connection interplay', () => {
+    const a = { component: 'R1', pin: 1 };
+    const b = { component: 'LED1', pin: 2 };
+
+    it('cancels a pending connect when the drawn wire is deleted again', () => {
+        const buffer = new CanvasEditBuffer();
+        buffer.recordConnect(a, b);
+        buffer.recordDisconnect(a, b);
+        expect(buffer.count).toBe(0);
+    });
+
+    it('cancels a pending disconnect when the connection is drawn again', () => {
+        const buffer = new CanvasEditBuffer();
+        buffer.recordDisconnect(a, b);
+        buffer.recordConnect(a, b);
+        expect(buffer.count).toBe(0);
+    });
+
+    it('converts a pending connect when the drawn wire is rewired', () => {
+        const buffer = new CanvasEditBuffer();
+        const c = { component: 'LED1', pin: 1 };
+        buffer.recordConnect(a, b);
+        buffer.recordRewire(a, b, a, c);
+        expect(buffer.all).toEqual([{ kind: 'connect', from: a, to: c }]);
+    });
+
+    it('drops pending connects that mention a removed component', () => {
+        const buffer = new CanvasEditBuffer();
+        buffer.recordConnect(a, b);
+        buffer.recordRemove('LED1');
+        expect(buffer.all).toEqual([{ kind: 'remove', id: 'LED1' }]);
+    });
+});
+
 describe('applyCanvasEdits: comments and malformed input', () => {
     it('ignores map blocks inside line comments', () => {
         const source = `@resistor R1 330\n@led LED1 red\n// map (nothing here)\nmap (\n    (R1 pin 2 -> LED1 pin 1)\n)\n`;

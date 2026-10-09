@@ -17,6 +17,7 @@ export interface Endpoint {
 export type CanvasEdit =
     | { kind: 'add'; id: string; declaration: string }
     | { kind: 'remove'; id: string }
+    | { kind: 'connect'; from: Endpoint; to: Endpoint }
     | { kind: 'disconnect'; from: Endpoint; to: Endpoint }
     | { kind: 'rewire'; oldFrom: Endpoint; oldTo: Endpoint; newFrom: Endpoint; newTo: Endpoint };
 
@@ -225,7 +226,7 @@ function removeDeclaration(source: string, id: string): { code: string } | { rea
 function malformedEntryMentions(source: string, edit: CanvasEdit): boolean {
     const ids = edit.kind === 'remove'
         ? [edit.id]
-        : edit.kind === 'disconnect'
+        : edit.kind === 'disconnect' || edit.kind === 'connect'
             ? [edit.from.component, edit.to.component]
             : edit.kind === 'rewire'
                 ? [edit.oldFrom.component, edit.oldTo.component, edit.newFrom.component, edit.newTo.component]
@@ -294,6 +295,15 @@ function applyOne(source: string, edit: CanvasEdit): { code: string } | { reason
                 if (!changed) break;
             }
             return { code };
+        }
+        case 'connect': {
+            if (!connectionExists(source, edit.from, edit.to) && malformedEntryMentions(source, edit)) {
+                return { reason: 'the connection appears in a map entry that cannot be parsed' };
+            }
+            if (connectionExists(source, edit.from, edit.to)) {
+                return { code: source };
+            }
+            return { code: insertConnection(source, edit.from, edit.to) };
         }
         case 'disconnect': {
             if (malformedEntryMentions(source, edit)) {
@@ -369,7 +379,39 @@ export class CanvasEditBuffer {
         }
     }
 
+    recordConnect(from: Endpoint, to: Endpoint): void {
+        // Deleting a connection and drawing the same one again cancels out.
+        const disconnect = this.edits.find(edit =>
+            edit.kind === 'disconnect' && isSameConnection(edit.from, edit.to, from, to)
+        );
+        if (disconnect) {
+            this.edits = this.edits.filter(edit => edit !== disconnect);
+            return;
+        }
+        // Drawing the original connection back cancels a pending rewire.
+        const rewire = this.edits.find(edit =>
+            edit.kind === 'rewire' && isSameConnection(edit.oldFrom, edit.oldTo, from, to)
+        );
+        if (rewire) {
+            this.edits = this.edits.filter(edit => edit !== rewire);
+            return;
+        }
+        if (this.edits.some(edit => edit.kind === 'connect' && isSameConnection(edit.from, edit.to, from, to))) {
+            return;
+        }
+        this.edits.push({ kind: 'connect', from, to });
+    }
+
     recordDisconnect(from: Endpoint, to: Endpoint): void {
+        // Deleting a wire that was drawn on the canvas and never written
+        // simply cancels the pending connect.
+        const connect = this.edits.find(edit =>
+            edit.kind === 'connect' && isSameConnection(edit.from, edit.to, from, to)
+        );
+        if (connect) {
+            this.edits = this.edits.filter(edit => edit !== connect);
+            return;
+        }
         // Removing a wire that was rewired earlier must remove the original
         // connection, not the one the user just dragged to.
         const pending = this.edits.find(edit =>
@@ -385,6 +427,15 @@ export class CanvasEditBuffer {
 
     recordRewire(oldFrom: Endpoint, oldTo: Endpoint, newFrom: Endpoint, newTo: Endpoint): void {
         if (sameEndpoint(oldFrom, newFrom) && sameEndpoint(oldTo, newTo)) return;
+        // Rewiring a wire that was just drawn converts the pending connect.
+        const drawn = this.edits.find(edit =>
+            edit.kind === 'connect' && isSameConnection(edit.from, edit.to, oldFrom, oldTo)
+        );
+        if (drawn) {
+            this.edits = this.edits.filter(edit => edit !== drawn);
+            this.recordConnect(newFrom, newTo);
+            return;
+        }
         const pending = this.edits.find(edit =>
             edit.kind === 'rewire' && isSameConnection(edit.newFrom, edit.newTo, oldFrom, oldTo)
         );
@@ -405,7 +456,9 @@ export class CanvasEditBuffer {
         this.edits = this.edits.filter(edit => {
             if (edit.kind === 'add') return edit.id !== id;
             if (edit.kind === 'remove') return edit.id !== id;
-            if (edit.kind === 'disconnect') return edit.from.component !== id && edit.to.component !== id;
+            if (edit.kind === 'connect' || edit.kind === 'disconnect') {
+                return edit.from.component !== id && edit.to.component !== id;
+            }
             return edit.oldFrom.component !== id && edit.oldTo.component !== id &&
                 edit.newFrom.component !== id && edit.newTo.component !== id;
         });

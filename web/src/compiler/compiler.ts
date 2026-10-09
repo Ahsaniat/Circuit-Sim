@@ -79,6 +79,12 @@ const KEYWORDS = new Set(['def', 'map', 'pin', 'input', 'output', 'gnd', 'vcc'])
 /** Upper bound on pins a custom IC may declare. */
 const MAX_CUSTOM_IC_PINS = 64;
 
+/** Wire colours, in assignment order. Shared with the canvas wire tool. */
+export const WIRE_COLORS = [
+    '#E63946', '#457B9D', '#2A9D8F', '#E9C46A',
+    '#F4A261', '#264653', '#8338EC', '#3A86FF',
+];
+
 // Component type keywords that can be used with @keyword syntax
 const COMPONENT_KEYWORDS: Record<string, { category: ComponentCategory; defaultType: string; pinCount: number }> = dict({
     // Passive components (2 pins)
@@ -1014,7 +1020,7 @@ class IRGenerator {
 
     private generateWires(connections: Connection[]): Wire[] {
         const wires: Wire[] = [];
-        const colors = ['#E63946', '#457B9D', '#2A9D8F', '#E9C46A', '#F4A261', '#264653', '#8338EC', '#3A86FF'];
+        const colors = WIRE_COLORS;
         
         // Track used routing channels to avoid overlaps
         const usedYChannels: number[] = [];
