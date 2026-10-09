@@ -830,10 +830,16 @@ class IRGenerator {
         const geo = this.boardGeometries.get(boardId);
         if (!geo) return;
 
-        const startCol = this.nextAvailableCol.get(boardId) ?? 3;
-
         const pinCount = this.resolvePinCount(comp);
         const footprint = getComponentFootprint(comp.category, pinCount, comp.type);
+
+        let startCol = this.nextAvailableCol.get(boardId) ?? 3;
+        if (footprint.orientation === 'rail') {
+            // A rail body hangs to the left of its pins, so the pins have
+            // to start far enough in that the body stays on the board.
+            const bodyCols = Math.ceil(footprint.pins[0].offsetX / BreadboardGeometry.HOLE_SPACING);
+            startCol = Math.max(startCol, bodyCols + 3);
+        }
         
         // Calculate placement
         const placementResult = calculatePlacement(

@@ -124,6 +124,9 @@ describe('wires', () => {
         expect(pin1.row).toBe('TOP+');
         expect(pin2.row).toBe('TOP-');
         expect(pin2.col).toBe(pin1.col);
+        // The body hangs six columns left of the pins, so the pins start
+        // at least three body lengths in and never overhang the board.
+        expect(pin1.col).toBeGreaterThanOrEqual(9);
 
         const wire = ir.wires[0];
         expect(geo.getRowAtY(wire.from.y)).toBe('TOP+');
