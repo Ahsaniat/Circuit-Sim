@@ -93,6 +93,7 @@ export function runErc(ir: CircuitIR, netlist: Netlist, unsupported: Set<string>
     }
 
     // 4. Floating two-pin components (nothing else on either net).
+    const wiredNets = new Set(netlist.wireNet);
     for (const comp of ir.components) {
         if (comp.pinCount !== 2) continue;
         if (!['passive', 'led', 'diode'].includes(comp.category ?? '')) continue;
@@ -102,7 +103,7 @@ export function runErc(ir: CircuitIR, netlist: Netlist, unsupported: Set<string>
             const net = netlist.nets[netId];
             // Other component pins on the net, or a wire landing on it.
             const hasOtherPins = net.pins.some(p => !p.startsWith(`${comp.id}:`));
-            return hasOtherPins || netlist.wireNet.includes(netId);
+            return hasOtherPins || wiredNets.has(netId);
         });
         if (!connected) {
             add({
@@ -136,7 +137,7 @@ export function runErc(ir: CircuitIR, netlist: Netlist, unsupported: Set<string>
     // 6. No power source actually wired into the circuit.
     const powerInUse = netlist.nets.some(net =>
         net.power !== undefined &&
-        (net.pins.length > 0 || netlist.wireNet.includes(net.id))
+        (net.pins.length > 0 || wiredNets.has(net.id))
     );
     if (!powerInUse) {
         add({
@@ -145,7 +146,7 @@ export function runErc(ir: CircuitIR, netlist: Netlist, unsupported: Set<string>
         });
     }
 
-    // 6. Components without a simulation model.
+    // 7. Components without a simulation model.
     for (const id of unsupported) {
         add({
             severity: 'info',
